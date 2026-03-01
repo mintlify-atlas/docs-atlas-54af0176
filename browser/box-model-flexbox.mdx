@@ -1,0 +1,444 @@
+---
+title: Flexbox and grid layout
+description: Deep dive into flexbox and CSS Grid layout algorithms including axis calculations, flex properties, and grid track sizing
+---
+
+Modern CSS layout modes like Flexbox and Grid provide powerful tools for creating responsive, flexible layouts. Understanding their algorithms is essential for building a browser engine and optimizing layout performance.
+
+## Flexbox algorithm
+
+Flexbox is a one-dimensional layout method for arranging items along a main axis with flexible sizing.
+
+<Info>
+Flexbox excels at distributing space and aligning items within a container, even when their sizes are unknown or dynamic.
+</Info>
+
+### Main and cross axis
+
+Flexbox layouts are oriented along two perpendicular axes:
+
+<Tabs>
+  <Tab title="Main axis">
+    The primary axis along which flex items are laid out. Direction is determined by `flex-direction`.
+    
+    ```css
+    .container {
+      display: flex;
+      flex-direction: row; /* horizontal main axis */
+    }
+    ```
+    
+    **Main axis properties:**
+    - `justify-content` - Aligns items along main axis
+    - `flex-grow` - Controls growth along main axis
+    - `flex-shrink` - Controls shrinking along main axis
+    - `flex-basis` - Sets initial size along main axis
+  </Tab>
+  
+  <Tab title="Cross axis">
+    The axis perpendicular to the main axis.
+    
+    ```css
+    .container {
+      display: flex;
+      flex-direction: row; /* vertical cross axis */
+      align-items: center;
+    }
+    ```
+    
+    **Cross axis properties:**
+    - `align-items` - Aligns items along cross axis
+    - `align-self` - Overrides alignment for individual items
+    - `align-content` - Aligns flex lines when wrapping
+  </Tab>
+</Tabs>
+
+### Flex direction
+
+The `flex-direction` property establishes the main axis:
+
+<CardGroup cols={2}>
+  <Card title="row" icon="arrow-right">
+    Main axis runs left to right (or right to left in RTL languages). Items are arranged horizontally.
+  </Card>
+  
+  <Card title="row-reverse" icon="arrow-left">
+    Main axis runs right to left (or left to right in RTL languages). Items are arranged horizontally in reverse order.
+  </Card>
+  
+  <Card title="column" icon="arrow-down">
+    Main axis runs top to bottom. Items are arranged vertically.
+  </Card>
+  
+  <Card title="column-reverse" icon="arrow-up">
+    Main axis runs bottom to top. Items are arranged vertically in reverse order.
+  </Card>
+</CardGroup>
+
+### Flex basis
+
+The `flex-basis` property sets the initial size of a flex item before space distribution:
+
+<Steps>
+  <Step title="Determine flex basis">
+    Start with the value of `flex-basis`. If set to `auto`, use the item's content size or explicit `width`/`height`.
+  </Step>
+  
+  <Step title="Apply constraints">
+    Respect `min-width`, `max-width`, `min-height`, and `max-height` constraints.
+  </Step>
+  
+  <Step title="Calculate hypothetical size">
+    This becomes the item's hypothetical main size before flex grow/shrink is applied.
+  </Step>
+</Steps>
+
+```css
+.item {
+  flex-basis: 200px; /* Start at 200px before growing/shrinking */
+}
+
+.item-auto {
+  flex-basis: auto; /* Use content size or explicit width */
+}
+
+.item-zero {
+  flex-basis: 0; /* Start at 0, allowing flex-grow to control size */
+}
+```
+
+<Info>
+Setting `flex-basis: 0` with `flex-grow: 1` distributes space based purely on the grow factor, ignoring content size.
+</Info>
+
+### Flex grow
+
+The `flex-grow` property controls how flex items expand to fill available space:
+
+<Steps>
+  <Step title="Calculate free space">
+    Determine remaining space after laying out all items at their flex-basis size.
+  </Step>
+  
+  <Step title="Sum grow factors">
+    Add up all `flex-grow` values of items in the container.
+  </Step>
+  
+  <Step title="Distribute proportionally">
+    Each item receives additional space proportional to its `flex-grow` value divided by the total.
+  </Step>
+  
+  <Step title="Apply constraints">
+    Respect min/max size constraints. If an item hits a constraint, distribute its unused space to other items.
+  </Step>
+</Steps>
+
+```css
+.container {
+  display: flex;
+  width: 500px;
+}
+
+.item-1 {
+  flex-basis: 100px;
+  flex-grow: 1; /* Gets 1/3 of remaining 200px = 166.67px total */
+}
+
+.item-2 {
+  flex-basis: 100px;
+  flex-grow: 2; /* Gets 2/3 of remaining 200px = 233.33px total */
+}
+
+.item-3 {
+  flex-basis: 100px;
+  flex-grow: 0; /* Stays at 100px */
+}
+```
+
+### Flex shrink
+
+The `flex-shrink` property controls how flex items shrink when the container is too small:
+
+<Steps>
+  <Step title="Calculate overflow">
+    Determine how much the items overflow the container when laid out at flex-basis size.
+  </Step>
+  
+  <Step title="Calculate scaled shrink factors">
+    Multiply each item's `flex-shrink` value by its flex-basis to get its scaled factor.
+  </Step>
+  
+  <Step title="Distribute proportionally">
+    Each item shrinks proportionally to its scaled shrink factor divided by the total.
+  </Step>
+  
+  <Step title="Apply constraints">
+    Respect min-size constraints. If an item hits a minimum, remove it from shrinking calculations.
+  </Step>
+</Steps>
+
+```css
+.container {
+  display: flex;
+  width: 300px;
+}
+
+.item-1 {
+  flex-basis: 200px;
+  flex-shrink: 1; /* Shrinks by (1 * 200) / (1*200 + 2*200) = 1/3 */
+}
+
+.item-2 {
+  flex-basis: 200px;
+  flex-shrink: 2; /* Shrinks by (2 * 200) / (1*200 + 2*200) = 2/3 */
+}
+```
+
+<Warning>
+Unlike `flex-grow`, `flex-shrink` is weighted by the item's flex-basis. Larger items shrink more in absolute terms.
+</Warning>
+
+### Complete flexbox layout algorithm
+
+The full flexbox layout algorithm follows these steps:
+
+<Steps>
+  <Step title="Generate flex items">
+    Determine which children become flex items. Absolutely positioned children and text nodes are handled differently.
+  </Step>
+  
+  <Step title="Determine flex direction">
+    Establish main and cross axes based on `flex-direction` and writing mode.
+  </Step>
+  
+  <Step title="Calculate flex-basis">
+    Determine the hypothetical main size of each flex item based on `flex-basis`, content size, and constraints.
+  </Step>
+  
+  <Step title="Collect items into lines">
+    If `flex-wrap` is enabled, break items into multiple lines based on container size.
+  </Step>
+  
+  <Step title="Resolve flexible lengths">
+    Apply `flex-grow` or `flex-shrink` to distribute free space or absorb overflow.
+  </Step>
+  
+  <Step title="Determine cross size">
+    Calculate each item's cross size based on content, `align-items`, and `align-self`.
+  </Step>
+  
+  <Step title="Align items on main axis">
+    Position items along the main axis using `justify-content`.
+  </Step>
+  
+  <Step title="Align items on cross axis">
+    Position items along the cross axis using `align-items`, `align-self`, and `align-content`.
+  </Step>
+</Steps>
+
+<Info>
+The flexbox specification defines a precise algorithm with many edge cases. Production implementations must handle nested flex containers, baseline alignment, and interactions with other layout modes.
+</Info>
+
+## Grid algorithm
+
+CSS Grid is a two-dimensional layout system that divides space into rows and columns.
+
+### Grid track sizing
+
+Grid tracks (rows and columns) are sized using a sophisticated algorithm that handles fixed, flexible, and content-based sizing:
+
+<Tabs>
+  <Tab title="Fixed sizing">
+    Tracks with explicit sizes in absolute units.
+    
+    ```css
+    .grid {
+      display: grid;
+      grid-template-columns: 100px 200px 150px;
+      grid-template-rows: 50px auto;
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Flexible sizing (fr)">
+    The `fr` unit distributes available space proportionally.
+    
+    ```css
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 2fr 1fr; /* 25% 50% 25% */
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Content-based sizing">
+    Tracks sized based on their content using `min-content`, `max-content`, or `auto`.
+    
+    ```css
+    .grid {
+      display: grid;
+      grid-template-columns: min-content max-content auto;
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Minmax function">
+    Sets minimum and maximum track sizes.
+    
+    ```css
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(100px, 1fr) minmax(200px, 2fr);
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Track sizing algorithm
+
+The grid track sizing algorithm resolves track sizes through multiple passes:
+
+<Steps>
+  <Step title="Initialize track sizes">
+    Set each track's base size and growth limit based on its sizing function.
+  </Step>
+  
+  <Step title="Resolve intrinsic sizes">
+    For content-based tracks, measure min-content and max-content sizes of items in the track.
+  </Step>
+  
+  <Step title="Maximize tracks">
+    Distribute space to grow tracks up to their growth limits, starting with the smallest tracks.
+  </Step>
+  
+  <Step title="Expand flexible tracks">
+    If there are `fr` units, distribute remaining space proportionally to their flex factors.
+  </Step>
+  
+  <Step title="Stretch auto tracks">
+    If space remains and `align-content` or `justify-content` allow, grow auto tracks to fill the container.
+  </Step>
+</Steps>
+
+<Warning>
+Grid track sizing can be computationally expensive, especially with spanning items and complex sizing functions. Production engines use caching and incremental updates.
+</Warning>
+
+### Grid item placement
+
+Items are placed into the grid using automatic or explicit positioning:
+
+<Tabs>
+  <Tab title="Explicit placement">
+    Use line numbers or named lines to position items.
+    
+    ```css
+    .item {
+      grid-column: 2 / 4; /* Start at line 2, end at line 4 */
+      grid-row: 1 / 3;
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Named areas">
+    Define and reference named grid areas.
+    
+    ```css
+    .grid {
+      grid-template-areas:
+        "header header"
+        "sidebar content"
+        "footer footer";
+    }
+    
+    .item {
+      grid-area: header;
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Auto placement">
+    Let the browser automatically place items using the auto-placement algorithm.
+    
+    ```css
+    .grid {
+      display: grid;
+      grid-auto-flow: row; /* or column, row dense, column dense */
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Item spanning
+
+Grid items can span multiple rows or columns:
+
+<Steps>
+  <Step title="Parse span notation">
+    Items can specify spans using the `span` keyword or explicit line numbers.
+    
+    ```css
+    .item {
+      grid-column: span 2; /* Span 2 columns */
+      grid-row: 1 / span 3; /* Start at row 1, span 3 rows */
+    }
+    ```
+  </Step>
+  
+  <Step title="Resolve auto-placement">
+    For auto-placed spanning items, find the first position where the item fits without overlapping.
+  </Step>
+  
+  <Step title="Handle conflicts">
+    If multiple items occupy the same cells, later items are placed in the next available space.
+  </Step>
+</Steps>
+
+### Grid gaps
+
+The `gap` property (formerly `grid-gap`) adds spacing between tracks:
+
+```css
+.grid {
+  display: grid;
+  gap: 20px; /* 20px gap between all rows and columns */
+  /* or */
+  row-gap: 20px;
+  column-gap: 10px;
+}
+```
+
+<Info>
+Gaps are added between tracks, not at the edges. A grid with 3 columns and a 10px gap has 2 gaps totaling 20px.
+</Info>
+
+## Implementation considerations
+
+When implementing flexbox and grid algorithms:
+
+<CardGroup cols={2}>
+  <Card title="Measure content sizes" icon="ruler-combined">
+    Efficiently measure min-content and max-content sizes by performing layout with different constraints.
+  </Card>
+  
+  <Card title="Handle circular dependencies" icon="arrows-rotate">
+    Detect and resolve circular dependencies where item size depends on container size which depends on item size.
+  </Card>
+  
+  <Card title="Optimize for common cases" icon="gauge-high">
+    Fast-path simple layouts (all fixed sizes, no spanning) before running the full algorithm.
+  </Card>
+  
+  <Card title="Cache intermediate results" icon="floppy-disk">
+    Store track sizes and item placements to avoid recalculation when only some items change.
+  </Card>
+</CardGroup>
+
+<Warning>
+**Performance consideration:** Grid layout with many spanning items and intrinsic sizing can require multiple layout passes. Consider using fixed sizes or explicit placement where possible for better performance.
+</Warning>
+
+<Info>
+**Project checkpoint:** Implement flexbox and grid layout algorithms in your browser engine. Handle all flex properties (basis, grow, shrink) and grid features (track sizing, placement, spanning). Test with complex real-world layouts and measure algorithm performance.
+</Info>

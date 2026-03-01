@@ -1,0 +1,634 @@
+---
+title: 'HTML parsing'
+description: 'Deep dive into HTML tokenization, tree construction, error recovery, and script handling mechanisms in browser engines.'
+keywords: ['HTML parser', 'tokenization', 'tree construction', 'error recovery', 'quirks mode', 'parser-blocking scripts']
+---
+
+HTML parsing is the critical first step in transforming raw HTML markup into a structured document tree that browsers can work with. This process involves sophisticated state machines, error recovery, and careful handling of scripts.
+
+## Tokenization state machine
+
+The HTML tokenizer implements a state machine that processes the input character stream and produces tokens. This is a complex process with numerous states and transitions.
+
+<Info>
+The HTML5 specification defines a tokenization state machine with 13 distinct states and 67 possible transitions between them.
+</Info>
+
+<Steps>
+  <Step title="Initialize tokenizer state">
+    Begin in the **data state**, the default state for parsing regular content. The tokenizer maintains a current state and processes characters one at a time.
+  </Step>
+  
+  <Step title="Process character stream">
+    Read characters from the input stream and transition between states based on the current character and current state. Each state has specific rules for handling different characters.
+  </Step>
+  
+  <Step title="Emit tokens">
+    When appropriate conditions are met, emit tokens such as:
+    - **Start tag tokens** (e.g., `<div>`)
+    - **End tag tokens** (e.g., `</div>`)
+    - **Character tokens** (text content)
+    - **Comment tokens**
+    - **DOCTYPE tokens**
+  </Step>
+  
+  <Step title="Handle state transitions">
+    Navigate through the 67 possible state transitions based on the input. Common states include:
+    - Data state
+    - Tag open state
+    - Tag name state
+    - Before attribute name state
+    - Attribute name state
+    - Attribute value states (quoted and unquoted)
+    - Script data states
+    - Comment states
+  </Step>
+</Steps>
+
+### State machine implementation
+
+The tokenizer processes characters and transitions states according to specific rules:
+
+<CodeGroup>
+
+```cpp tokenizer.cpp
+enum class State {
+    Data,
+    TagOpen,
+    TagName,
+    BeforeAttributeName,
+    AttributeName,
+    AfterAttributeName,
+    BeforeAttributeValue,
+    AttributeValueDoubleQuoted,
+    AttributeValueSingleQuoted,
+    AttributeValueUnquoted,
+    ScriptData,
+    CommentStart,
+    Comment
+};
+
+void HTMLTokenizer::processCharacter(char c) {
+    switch (current_state) {
+        case State::Data:
+            if (c == '<') {
+                current_state = State::TagOpen;
+            } else {
+                emitCharacter(c);
+            }
+            break;
+        
+        case State::TagOpen:
+            if (c == '/') {
+                current_state = State::EndTagOpen;
+            } else if (isAlpha(c)) {
+                current_state = State::TagName;
+                current_token.appendToTagName(toLowerCase(c));
+            }
+            break;
+        
+        case State::TagName:
+            if (isWhitespace(c)) {
+                current_state = State::BeforeAttributeName;
+            } else if (c == '>') {
+                emitCurrentToken();
+                current_state = State::Data;
+            } else {
+                current_token.appendToTagName(toLowerCase(c));
+            }
+            break;
+        
+        // ... additional state handling
+    }
+}
+```
+
+```rust tokenizer.rs
+enum State {
+    Data,
+    TagOpen,
+    TagName,
+    BeforeAttributeName,
+    AttributeName,
+    AfterAttributeName,
+    BeforeAttributeValue,
+    AttributeValueDoubleQuoted,
+    AttributeValueSingleQuoted,
+    AttributeValueUnquoted,
+    ScriptData,
+    CommentStart,
+    Comment,
+}
+
+impl HTMLTokenizer {
+    fn process_character(&mut self, c: char) {
+        match self.current_state {
+            State::Data => {
+                if c == '<' {
+                    self.current_state = State::TagOpen;
+                } else {
+                    self.emit_character(c);
+                }
+            }
+            
+            State::TagOpen => {
+                if c == '/' {
+                    self.current_state = State::EndTagOpen;
+                } else if c.is_ascii_alphabetic() {
+                    self.current_state = State::TagName;
+                    self.current_token.append_to_tag_name(c.to_ascii_lowercase());
+                }
+            }
+            
+            State::TagName => {
+                if c.is_whitespace() {
+                    self.current_state = State::BeforeAttributeName;
+                } else if c == '>' {
+                    self.emit_current_token();
+                    self.current_state = State::Data;
+                } else {
+                    self.current_token.append_to_tag_name(c.to_ascii_lowercase());
+                }
+            }
+            
+            // ... additional state handling
+        }
+    }
+}
+```
+
+</CodeGroup>
+
+<Warning>
+The tokenizer must handle special parsing rules for `<script>` and `<style>` elements, switching to script data states where most HTML parsing rules don't apply.
+</Warning>
+
+## Tree construction algorithm
+
+Once tokens are generated, the tree construction algorithm builds the DOM tree. This process uses a stack-based approach with insertion modes and special rules for different contexts.
+
+### Core algorithm components
+
+<AccordionGroup>
+  <Accordion title="Stack of open elements">
+    Maintains the hierarchy of currently open elements. Elements are pushed onto the stack when their start tag is encountered and popped when their end tag is processed.
+    
+    The stack represents the current nesting structure and is used to determine where new elements should be inserted.
+  </Accordion>
+  
+  <Accordion title="Insertion modes">
+    The tree constructor operates in different insertion modes depending on the current context:
+    
+    - **Initial mode**: Before any content
+    - **Before html mode**: Before the `<html>` element
+    - **Before head mode**: Before the `<head>` element
+    - **In head mode**: Inside the `<head>` element
+    - **After head mode**: Between `</head>` and `<body>`
+    - **In body mode**: Inside the `<body>` element (most common)
+    - **In table mode**: Inside `<table>` elements
+    - **In select mode**: Inside `<select>` elements
+    - **After body mode**: After the `</body>` end tag
+    - **After after body mode**: Final state
+    
+    Each mode has specific rules for handling different tokens.
+  </Accordion>
+  
+  <Accordion title="Active formatting elements">
+    Tracks formatting elements (like `<b>`, `<i>`, `<a>`) that need to be reopened when their formatting scope is broken by block-level elements.
+    
+    This ensures that markup like `<b>Bold <div>Block</div> Still Bold</b>` is handled correctly.
+  </Accordion>
+  
+  <Accordion title="Foster parenting">
+    Special handling for table-related content that appears in invalid positions. Content that shouldn't be in tables is "fostered" out to maintain proper structure.
+  </Accordion>
+</AccordionGroup>
+
+### Tree construction process
+
+<Steps>
+  <Step title="Receive token from tokenizer">
+    The tree constructor receives tokens one at a time from the tokenizer. Each token type requires different handling.
+  </Step>
+  
+  <Step title="Determine current insertion mode">
+    Based on the current parsing context and open elements stack, determine which insertion mode is active.
+  </Step>
+  
+  <Step title="Process token according to insertion mode">
+    Apply the specific rules for the current insertion mode to handle the token. This may involve:
+    - Creating new elements
+    - Pushing elements onto the stack
+    - Popping elements from the stack
+    - Switching insertion modes
+    - Triggering error recovery
+  </Step>
+  
+  <Step title="Update DOM tree">
+    Insert new nodes into the appropriate position in the DOM tree based on the algorithm's rules.
+  </Step>
+</Steps>
+
+<CodeGroup>
+
+```cpp tree_construction.cpp
+void HTMLTreeConstructor::processToken(const Token& token) {
+    switch (insertion_mode) {
+        case InsertionMode::InBody:
+            handleInBodyMode(token);
+            break;
+        case InsertionMode::InHead:
+            handleInHeadMode(token);
+            break;
+        case InsertionMode::InTable:
+            handleInTableMode(token);
+            break;
+        // ... other insertion modes
+    }
+}
+
+void HTMLTreeConstructor::handleInBodyMode(const Token& token) {
+    if (token.type == TokenType::StartTag) {
+        if (token.tagName == "div" || token.tagName == "p" || 
+            token.tagName == "section" /* ... other block elements */) {
+            
+            // Close any open <p> element
+            if (hasElementInButtonScope("p")) {
+                closePElement();
+            }
+            
+            // Insert new element
+            auto element = createElement(token.tagName, token.attributes);
+            insertElement(element);
+            openElements.push(element);
+        }
+        else if (token.tagName == "b" || token.tagName == "i" || 
+                 token.tagName == "strong" /* ... formatting elements */) {
+            reconstructActiveFormattingElements();
+            auto element = createElement(token.tagName, token.attributes);
+            insertElement(element);
+            openElements.push(element);
+            activeFormattingElements.push(element);
+        }
+    }
+    else if (token.type == TokenType::EndTag) {
+        // Find matching open element and close it
+        generateImpliedEndTags();
+        if (currentNode()->tagName != token.tagName) {
+            // Parse error: mismatched tags
+            reportParseError();
+        }
+        popElementsUntil(token.tagName);
+    }
+}
+```
+
+```rust tree_construction.rs
+impl HTMLTreeConstructor {
+    fn process_token(&mut self, token: &Token) {
+        match self.insertion_mode {
+            InsertionMode::InBody => self.handle_in_body_mode(token),
+            InsertionMode::InHead => self.handle_in_head_mode(token),
+            InsertionMode::InTable => self.handle_in_table_mode(token),
+            // ... other insertion modes
+        }
+    }
+    
+    fn handle_in_body_mode(&mut self, token: &Token) {
+        match token.token_type {
+            TokenType::StartTag => {
+                match token.tag_name.as_str() {
+                    "div" | "p" | "section" /* ... block elements */ => {
+                        // Close any open <p> element
+                        if self.has_element_in_button_scope("p") {
+                            self.close_p_element();
+                        }
+                        
+                        // Insert new element
+                        let element = self.create_element(&token.tag_name, &token.attributes);
+                        self.insert_element(element.clone());
+                        self.open_elements.push(element);
+                    }
+                    "b" | "i" | "strong" /* ... formatting elements */ => {
+                        self.reconstruct_active_formatting_elements();
+                        let element = self.create_element(&token.tag_name, &token.attributes);
+                        self.insert_element(element.clone());
+                        self.open_elements.push(element.clone());
+                        self.active_formatting_elements.push(element);
+                    }
+                    _ => {}
+                }
+            }
+            TokenType::EndTag => {
+                // Find matching open element and close it
+                self.generate_implied_end_tags();
+                if self.current_node().tag_name != token.tag_name {
+                    // Parse error: mismatched tags
+                    self.report_parse_error();
+                }
+                self.pop_elements_until(&token.tag_name);
+            }
+            _ => {}
+        }
+    }
+}
+```
+
+</CodeGroup>
+
+## Error recovery and quirks mode
+
+Browsers must handle malformed HTML gracefully. The HTML specification defines detailed error recovery procedures to ensure consistent rendering across browsers, even for invalid markup.
+
+### Error recovery mechanisms
+
+<Tabs>
+  <Tab title="Implied tags">
+    The parser automatically inserts missing required tags. For example:
+    
+    ```html
+    <table><tr><td>Cell</table>
+    ```
+    
+    The parser will automatically insert the missing `</td>` and `</tr>` end tags before closing the table.
+    
+    Common implied tags:
+    - `<html>` and `</html>`
+    - `<head>` and `</head>`
+    - `<body>` and `</body>`
+    - `</p>` when a block element is encountered
+    - `</li>` when another `<li>` is encountered
+  </Tab>
+  
+  <Tab title="Misnested tags">
+    When tags are improperly nested, the parser uses the active formatting elements list to reconstruct proper nesting:
+    
+    ```html
+    <b>Bold <i>Bold Italic</b> Just Italic</i>
+    ```
+    
+    This is reconstructed as:
+    
+    ```html
+    <b>Bold <i>Bold Italic</i></b><i> Just Italic</i>
+    ```
+    
+    The formatting is preserved even though the original markup was invalid.
+  </Tab>
+  
+  <Tab title="Invalid nesting">
+    Some elements cannot legally contain others. The parser moves content to valid locations:
+    
+    ```html
+    <table>Text before<tr><td>Cell</td></tr></table>
+    ```
+    
+    The text "Text before" is fostered out of the table and placed before it, as text cannot be a direct child of `<table>`.
+  </Tab>
+  
+  <Tab title="Unclosed tags">
+    At the end of the document, all open elements are automatically closed in the correct order:
+    
+    ```html
+    <html><body><div><p>Content
+    ```
+    
+    Automatically becomes:
+    
+    ```html
+    <html><body><div><p>Content</p></div></body></html>
+    ```
+  </Tab>
+</Tabs>
+
+### Quirks mode detection
+
+<Info>
+Browsers use different rendering modes based on the DOCTYPE to maintain compatibility with legacy web pages.
+</Info>
+
+The parser determines the rendering mode based on the DOCTYPE:
+
+<AccordionGroup>
+  <Accordion title="Standards mode">
+    Triggered by a proper HTML5 DOCTYPE or other modern DOCTYPEs:
+    
+    ```html
+    <!DOCTYPE html>
+    ```
+    
+    Renders according to modern web standards with strict layout rules.
+  </Accordion>
+  
+  <Accordion title="Quirks mode">
+    Triggered by a missing DOCTYPE or certain legacy DOCTYPEs:
+    
+    ```html
+    <!-- No DOCTYPE -->
+    <html>...
+    ```
+    
+    Emulates rendering bugs in older browsers (IE 5, Netscape 4) for backward compatibility. Affects:
+    - Box model calculations
+    - Table layout
+    - Font size calculations
+    - Line height handling
+  </Accordion>
+  
+  <Accordion title="Limited quirks mode">
+    Triggered by certain DOCTYPEs (also called "almost standards mode"):
+    
+    ```html
+    <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
+      "http://www.w3.org/TR/html4/loose.dtd">
+    ```
+    
+    Only affects table cell layout with images, all other rendering follows standards mode.
+  </Accordion>
+</AccordionGroup>
+
+<Warning>
+Always use `<!DOCTYPE html>` in new projects to ensure standards mode rendering and consistent behavior across browsers.
+</Warning>
+
+## Parser-blocking scripts and async/defer
+
+Script elements can significantly impact HTML parsing performance and page load times. Understanding how scripts interact with the parser is crucial for optimization.
+
+### Parser-blocking behavior
+
+By default, when the parser encounters a `<script>` tag:
+
+<Steps>
+  <Step title="Pause HTML parsing">
+    The parser stops processing HTML tokens immediately when it encounters a `<script>` start tag.
+  </Step>
+  
+  <Step title="Download script (if external)">
+    If the script has a `src` attribute, the browser downloads the script file. **This blocks all further parsing until the download completes.**
+  </Step>
+  
+  <Step title="Execute script">
+    The JavaScript code is executed immediately. The script can access all DOM nodes that have been parsed so far but cannot access elements that appear later in the document.
+  </Step>
+  
+  <Step title="Resume HTML parsing">
+    Only after script execution completes does the parser continue processing the remaining HTML.
+  </Step>
+</Steps>
+
+<Danger>
+Parser-blocking scripts can severely impact page load performance, especially when scripts are large or the network is slow.
+</Danger>
+
+### Script loading strategies
+
+Modern HTML provides attributes to control script loading and execution:
+
+<CodeGroup>
+
+```html synchronous (default)
+<!-- Blocks parsing until downloaded and executed -->
+<script src="script.js"></script>
+
+<div>This content waits for script.js to download and execute</div>
+```
+
+```html async attribute
+<!-- Downloads in parallel, executes when ready -->
+<script src="script.js" async></script>
+
+<div>This content doesn't wait for script.js</div>
+
+<!-- Execution order is not guaranteed -->
+<script src="a.js" async></script>
+<script src="b.js" async></script>
+<!-- b.js might execute before a.js -->
+```
+
+```html defer attribute
+<!-- Downloads in parallel, executes after parsing -->
+<script src="script.js" defer></script>
+
+<div>This content doesn't wait for script.js</div>
+
+<!-- Execution order is preserved -->
+<script src="a.js" defer></script>
+<script src="b.js" defer></script>
+<!-- a.js always executes before b.js -->
+```
+
+```html inline scripts
+<!-- Always blocks parsing -->
+<script>
+  // Executes immediately
+  console.log('Inline script');
+</script>
+
+<!-- async/defer have no effect on inline scripts -->
+<script defer>
+  // Still blocks parsing (defer is ignored)
+  console.log('Inline script with defer');
+</script>
+```
+
+</CodeGroup>
+
+### Comparison of script loading strategies
+
+| Attribute | Download | Parsing | Execution timing | Order guaranteed |
+|-----------|----------|---------|------------------|------------------|
+| None (default) | Blocks parsing | Blocked | Immediately after download | Yes |
+| `async` | Parallel | Continues | As soon as downloaded | No |
+| `defer` | Parallel | Continues | After parsing completes | Yes |
+
+<Tip>
+**Best practices for script loading:**
+
+- Use `defer` for scripts that don't need to execute immediately
+- Use `async` for independent scripts like analytics that don't depend on other scripts
+- Place blocking scripts at the end of `<body>` if async/defer aren't suitable
+- Use module scripts (`<script type="module">`) which defer by default
+</Tip>
+
+### Implementation details
+
+<CodeGroup>
+
+```cpp script_handling.cpp
+void HTMLTreeConstructor::handleScriptElement(Element* script) {
+    bool parser_inserted = true;
+    bool async = script->hasAttribute("async");
+    bool defer = script->hasAttribute("defer");
+    
+    if (script->hasAttribute("src")) {
+        // External script
+        if (async) {
+            // Load asynchronously, execute when ready
+            script_loader->loadAsync(script);
+            // Continue parsing immediately
+        }
+        else if (defer && parser_inserted) {
+            // Load asynchronously, execute after parsing
+            script_loader->loadDeferred(script);
+            // Continue parsing immediately
+        }
+        else {
+            // Classic parser-blocking script
+            pauseParser();
+            script_loader->loadSync(script, [this]() {
+                resumeParser();
+            });
+        }
+    }
+    else {
+        // Inline script - always blocks
+        pauseParser();
+        executeScript(script->textContent());
+        resumeParser();
+    }
+}
+```
+
+```rust script_handling.rs
+impl HTMLTreeConstructor {
+    fn handle_script_element(&mut self, script: &Element) {
+        let parser_inserted = true;
+        let async_attr = script.has_attribute("async");
+        let defer = script.has_attribute("defer");
+        
+        if let Some(src) = script.get_attribute("src") {
+            // External script
+            if async_attr {
+                // Load asynchronously, execute when ready
+                self.script_loader.load_async(script);
+                // Continue parsing immediately
+            }
+            else if defer && parser_inserted {
+                // Load asynchronously, execute after parsing
+                self.script_loader.load_deferred(script);
+                // Continue parsing immediately
+            }
+            else {
+                // Classic parser-blocking script
+                self.pause_parser();
+                self.script_loader.load_sync(script, || {
+                    self.resume_parser();
+                });
+            }
+        }
+        else {
+            // Inline script - always blocks
+            self.pause_parser();
+            self.execute_script(&script.text_content());
+            self.resume_parser();
+        }
+    }
+}
+```
+
+</CodeGroup>
+
+<Check>
+You now understand the complete HTML parsing pipeline: from tokenization through tree construction to script handling. This knowledge is essential for building browser engines and optimizing page load performance.
+</Check>

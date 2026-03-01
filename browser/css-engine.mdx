@@ -1,0 +1,703 @@
+---
+title: 'CSS engine'
+description: 'Comprehensive guide to CSS tokenization, parsing, selector matching, cascade resolution, and style computation in browser engines.'
+keywords: ['CSS parser', 'CSS tokenizer', 'selector matching', 'specificity', 'cascade', 'inheritance', 'CSSOM']
+---
+
+The CSS engine transforms stylesheets into computed styles for each element. This involves tokenization, parsing CSS syntax, matching selectors to elements, resolving the cascade, and computing final style values.
+
+## CSS tokenizer and parser
+
+CSS parsing begins with tokenization, converting the raw stylesheet text into tokens, followed by parsing those tokens according to CSS grammar rules.
+
+### Tokenization process
+
+The CSS tokenizer breaks the input stream into meaningful tokens:
+
+<Steps>
+  <Step title="Read input stream">
+    Process the stylesheet character by character, handling Unicode and escape sequences.
+  </Step>
+  
+  <Step title="Recognize token patterns">
+    Identify different token types based on character patterns:
+    - **Identifiers** (property names, selector names)
+    - **Functions** (e.g., `rgb()`, `calc()`)
+    - **Strings** (quoted values)
+    - **Numbers** and **dimensions** (e.g., `10px`, `1.5em`)
+    - **Delimiters** (`:`, `;`, `{`, `}`, `,`)
+    - **Operators** (`+`, `-`, `*`, `/`)
+    - **Hash tokens** (`#id`, `#color`)
+    - **At-keywords** (`@media`, `@keyframes`)
+  </Step>
+  
+  <Step title="Handle whitespace and comments">
+    CSS comments (`/* ... */`) are discarded during tokenization. Whitespace is significant in some contexts (e.g., selector combinators) but not others.
+  </Step>
+  
+  <Step title="Emit tokens">
+    Send tokens to the parser for syntax analysis and structure building.
+  </Step>
+</Steps>
+
+<CodeGroup>
+
+```cpp css_tokenizer.cpp
+enum class CSSTokenType {
+    Ident,
+    Function,
+    AtKeyword,
+    Hash,
+    String,
+    Number,
+    Dimension,
+    Percentage,
+    Delim,
+    Whitespace,
+    Colon,
+    Semicolon,
+    Comma,
+    LeftBrace,
+    RightBrace,
+    LeftParen,
+    RightParen,
+    EOF
+};
+
+struct CSSToken {
+    CSSTokenType type;
+    std::string value;
+    double numericValue;
+    std::string unit;
+};
+
+class CSSTokenizer {
+private:
+    std::string input;
+    size_t position;
+    
+public:
+    CSSToken nextToken() {
+        skipWhitespace();
+        
+        if (position >= input.length()) {
+            return {CSSTokenType::EOF, "", 0, ""};
+        }
+        
+        char current = input[position];
+        
+        // Identifier or function
+        if (isIdentStart(current)) {
+            std::string ident = consumeIdent();
+            if (peek() == '(') {
+                position++; // consume '('
+                return {CSSTokenType::Function, ident, 0, ""};
+            }
+            return {CSSTokenType::Ident, ident, 0, ""};
+        }
+        
+        // Number or dimension
+        if (isDigit(current) || (current == '.' && isDigit(peek()))) {
+            return consumeNumericToken();
+        }
+        
+        // Hash (color or ID)
+        if (current == '#') {
+            position++;
+            std::string value = consumeIdent();
+            return {CSSTokenType::Hash, value, 0, ""};
+        }
+        
+        // String
+        if (current == '"' || current == '\'') {
+            return consumeString(current);
+        }
+        
+        // At-keyword
+        if (current == '@') {
+            position++;
+            std::string keyword = consumeIdent();
+            return {CSSTokenType::AtKeyword, keyword, 0, ""};
+        }
+        
+        // Delimiters
+        position++;
+        switch (current) {
+            case ':': return {CSSTokenType::Colon, ":", 0, ""};
+            case ';': return {CSSTokenType::Semicolon, ";", 0, ""};
+            case ',': return {CSSTokenType::Comma, ",", 0, ""};
+            case '{': return {CSSTokenType::LeftBrace, "{", 0, ""};
+            case '}': return {CSSTokenType::RightBrace, "}", 0, ""};
+            case '(': return {CSSTokenType::LeftParen, "(", 0, ""};
+            case ')': return {CSSTokenType::RightParen, ")", 0, ""};
+            default:  return {CSSTokenType::Delim, std::string(1, current), 0, ""};
+        }
+    }
+    
+    CSSToken consumeNumericToken() {
+        double value = consumeNumber();
+        
+        if (isIdentStart(peek())) {
+            std::string unit = consumeIdent();
+            if (unit == "%") {
+                return {CSSTokenType::Percentage, "", value, "%"};
+            }
+            return {CSSTokenType::Dimension, "", value, unit};
+        }
+        
+        return {CSSTokenType::Number, "", value, ""};
+    }
+};
+```
+
+```rust css_tokenizer.rs
+#[derive(Debug, Clone, PartialEq)]
+enum CSSTokenType {
+    Ident,
+    Function,
+    AtKeyword,
+    Hash,
+    String,
+    Number,
+    Dimension,
+    Percentage,
+    Delim,
+    Whitespace,
+    Colon,
+    Semicolon,
+    Comma,
+    LeftBrace,
+    RightBrace,
+    LeftParen,
+    RightParen,
+    EOF,
+}
+
+#[derive(Debug, Clone)]
+struct CSSToken {
+    token_type: CSSTokenType,
+    value: String,
+    numeric_value: f64,
+    unit: String,
+}
+
+struct CSSTokenizer {
+    input: Vec<char>,
+    position: usize,
+}
+
+impl CSSTokenizer {
+    fn next_token(&mut self) -> CSSToken {
+        self.skip_whitespace();
+        
+        if self.position >= self.input.len() {
+            return CSSToken {
+                token_type: CSSTokenType::EOF,
+                value: String::new(),
+                numeric_value: 0.0,
+                unit: String::new(),
+            };
+        }
+        
+        let current = self.input[self.position];
+        
+        // Identifier or function
+        if self.is_ident_start(current) {
+            let ident = self.consume_ident();
+            if self.peek() == Some('(') {
+                self.position += 1; // consume '('
+                return CSSToken {
+                    token_type: CSSTokenType::Function,
+                    value: ident,
+                    numeric_value: 0.0,
+                    unit: String::new(),
+                };
+            }
+            return CSSToken {
+                token_type: CSSTokenType::Ident,
+                value: ident,
+                numeric_value: 0.0,
+                unit: String::new(),
+            };
+        }
+        
+        // Number or dimension
+        if current.is_ascii_digit() || (current == '.' && self.peek().map_or(false, |c| c.is_ascii_digit())) {
+            return self.consume_numeric_token();
+        }
+        
+        // Hash (color or ID)
+        if current == '#' {
+            self.position += 1;
+            let value = self.consume_ident();
+            return CSSToken {
+                token_type: CSSTokenType::Hash,
+                value,
+                numeric_value: 0.0,
+                unit: String::new(),
+            };
+        }
+        
+        // String
+        if current == '"' || current == '\'' {
+            return self.consume_string(current);
+        }
+        
+        // At-keyword
+        if current == '@' {
+            self.position += 1;
+            let keyword = self.consume_ident();
+            return CSSToken {
+                token_type: CSSTokenType::AtKeyword,
+                value: keyword,
+                numeric_value: 0.0,
+                unit: String::new(),
+            };
+        }
+        
+        // Delimiters
+        self.position += 1;
+        let token_type = match current {
+            ':' => CSSTokenType::Colon,
+            ';' => CSSTokenType::Semicolon,
+            ',' => CSSTokenType::Comma,
+            '{' => CSSTokenType::LeftBrace,
+            '}' => CSSTokenType::RightBrace,
+            '(' => CSSTokenType::LeftParen,
+            ')' => CSSTokenType::RightParen,
+            _ => CSSTokenType::Delim,
+        };
+        
+        CSSToken {
+            token_type,
+            value: current.to_string(),
+            numeric_value: 0.0,
+            unit: String::new(),
+        }
+    }
+}
+```
+
+</CodeGroup>
+
+### Grammar implementation
+
+The CSS parser constructs a structured representation (CSSOM - CSS Object Model) by following CSS grammar rules.
+
+<Info>
+CSS uses a relatively simple grammar compared to programming languages, but it must handle error recovery gracefully since invalid CSS rules should be ignored rather than causing parsing to fail.
+</Info>
+
+<AccordionGroup>
+  <Accordion title="Stylesheet structure">
+    A stylesheet consists of a list of rules and at-rules:
+    
+    ```
+    stylesheet
+      : [ rule | at-rule | whitespace ]*
+      ;
+    ```
+    
+    At-rules include `@import`, `@media`, `@keyframes`, `@font-face`, etc.
+  </Accordion>
+  
+  <Accordion title="Rule structure">
+    Each rule consists of selectors and a declaration block:
+    
+    ```
+    rule
+      : selectors '{' declarations '}'
+      ;
+    
+    selectors
+      : selector [ ',' selector ]*
+      ;
+    ```
+    
+    Example: `h1, h2 { color: blue; font-size: 2em; }`
+  </Accordion>
+  
+  <Accordion title="Selector grammar">
+    Selectors are composed of simple selectors and combinators:
+    
+    ```
+    selector
+      : simple-selector [ combinator simple-selector ]*
+      ;
+    
+    simple-selector
+      : element-name? [ '#' id | '.' class | '[' attribute ']' | ':' pseudo ]*
+      ;
+    
+    combinator
+      : ' ' | '>' | '+' | '~'
+      ;
+    ```
+    
+    Examples:
+    - `div.container > p` (descendant and child combinators)
+    - `a:hover::before` (pseudo-class and pseudo-element)
+    - `input[type="text"]` (attribute selector)
+  </Accordion>
+  
+  <Accordion title="Declaration grammar">
+    Declarations consist of property-value pairs:
+    
+    ```
+    declarations
+      : declaration [ ';' declaration ]* [ ';' ]?
+      ;
+    
+    declaration
+      : property ':' value [ '!' 'important' ]?
+      ;
+    ```
+    
+    The value can be keywords, numbers, colors, functions, or combinations.
+  </Accordion>
+</AccordionGroup>
+
+<CodeGroup>
+
+```cpp css_parser.cpp
+class CSSParser {
+private:
+    CSSTokenizer tokenizer;
+    CSSToken currentToken;
+    
+public:
+    Stylesheet parseStylesheet() {
+        Stylesheet stylesheet;
+        
+        while (currentToken.type != CSSTokenType::EOF) {
+            if (currentToken.type == CSSTokenType::AtKeyword) {
+                stylesheet.rules.push_back(parseAtRule());
+            }
+            else {
+                auto rule = parseRule();
+                if (rule) {
+                    stylesheet.rules.push_back(*rule);
+                }
+            }
+        }
+        
+        return stylesheet;
+    }
+    
+    std::optional<StyleRule> parseRule() {
+        // Parse selectors
+        auto selectors = parseSelectors();
+        if (selectors.empty()) {
+            return std::nullopt;
+        }
+        
+        // Expect '{'
+        if (currentToken.type != CSSTokenType::LeftBrace) {
+            skipToNextRule();
+            return std::nullopt;
+        }
+        advance();
+        
+        // Parse declarations
+        auto declarations = parseDeclarations();
+        
+        // Expect '}'
+        if (currentToken.type != CSSTokenType::RightBrace) {
+            skipToNextRule();
+            return std::nullopt;
+        }
+        advance();
+        
+        return StyleRule{selectors, declarations};
+    }
+    
+    std::vector<Selector> parseSelectors() {
+        std::vector<Selector> selectors;
+        
+        do {
+            auto selector = parseSelector();
+            if (selector) {
+                selectors.push_back(*selector);
+            }
+            
+            if (currentToken.type == CSSTokenType::Comma) {
+                advance();
+            }
+            else {
+                break;
+            }
+        } while (true);
+        
+        return selectors;
+    }
+    
+    std::vector<Declaration> parseDeclarations() {
+        std::vector<Declaration> declarations;
+        
+        while (currentToken.type != CSSTokenType::RightBrace && 
+               currentToken.type != CSSTokenType::EOF) {
+            
+            if (currentToken.type == CSSTokenType::Ident) {
+                auto decl = parseDeclaration();
+                if (decl) {
+                    declarations.push_back(*decl);
+                }
+            }
+            
+            if (currentToken.type == CSSTokenType::Semicolon) {
+                advance();
+            }
+        }
+        
+        return declarations;
+    }
+    
+    std::optional<Declaration> parseDeclaration() {
+        std::string property = currentToken.value;
+        advance();
+        
+        // Expect ':'
+        if (currentToken.type != CSSTokenType::Colon) {
+            return std::nullopt;
+        }
+        advance();
+        
+        // Parse value
+        auto value = parseValue();
+        if (!value) {
+            return std::nullopt;
+        }
+        
+        // Check for !important
+        bool important = false;
+        if (currentToken.type == CSSTokenType::Delim && currentToken.value == "!") {
+            advance();
+            if (currentToken.type == CSSTokenType::Ident && currentToken.value == "important") {
+                important = true;
+                advance();
+            }
+        }
+        
+        return Declaration{property, *value, important};
+    }
+};
+```
+
+```rust css_parser.rs
+struct CSSParser {
+    tokenizer: CSSTokenizer,
+    current_token: CSSToken,
+}
+
+impl CSSParser {
+    fn parse_stylesheet(&mut self) -> Stylesheet {
+        let mut stylesheet = Stylesheet::new();
+        
+        while self.current_token.token_type != CSSTokenType::EOF {
+            if self.current_token.token_type == CSSTokenType::AtKeyword {
+                stylesheet.rules.push(self.parse_at_rule());
+            } else {
+                if let Some(rule) = self.parse_rule() {
+                    stylesheet.rules.push(rule);
+                }
+            }
+        }
+        
+        stylesheet
+    }
+    
+    fn parse_rule(&mut self) -> Option<StyleRule> {
+        // Parse selectors
+        let selectors = self.parse_selectors();
+        if selectors.is_empty() {
+            return None;
+        }
+        
+        // Expect '{'
+        if self.current_token.token_type != CSSTokenType::LeftBrace {
+            self.skip_to_next_rule();
+            return None;
+        }
+        self.advance();
+        
+        // Parse declarations
+        let declarations = self.parse_declarations();
+        
+        // Expect '}'
+        if self.current_token.token_type != CSSTokenType::RightBrace {
+            self.skip_to_next_rule();
+            return None;
+        }
+        self.advance();
+        
+        Some(StyleRule { selectors, declarations })
+    }
+    
+    fn parse_selectors(&mut self) -> Vec<Selector> {
+        let mut selectors = Vec::new();
+        
+        loop {
+            if let Some(selector) = self.parse_selector() {
+                selectors.push(selector);
+            }
+            
+            if self.current_token.token_type == CSSTokenType::Comma {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+        
+        selectors
+    }
+    
+    fn parse_declarations(&mut self) -> Vec<Declaration> {
+        let mut declarations = Vec::new();
+        
+        while self.current_token.token_type != CSSTokenType::RightBrace &&
+              self.current_token.token_type != CSSTokenType::EOF {
+            
+            if self.current_token.token_type == CSSTokenType::Ident {
+                if let Some(decl) = self.parse_declaration() {
+                    declarations.push(decl);
+                }
+            }
+            
+            if self.current_token.token_type == CSSTokenType::Semicolon {
+                self.advance();
+            }
+        }
+        
+        declarations
+    }
+    
+    fn parse_declaration(&mut self) -> Option<Declaration> {
+        let property = self.current_token.value.clone();
+        self.advance();
+        
+        // Expect ':'
+        if self.current_token.token_type != CSSTokenType::Colon {
+            return None;
+        }
+        self.advance();
+        
+        // Parse value
+        let value = self.parse_value()?;
+        
+        // Check for !important
+        let mut important = false;
+        if self.current_token.token_type == CSSTokenType::Delim &&
+           self.current_token.value == "!" {
+            self.advance();
+            if self.current_token.token_type == CSSTokenType::Ident &&
+               self.current_token.value == "important" {
+                important = true;
+                self.advance();
+            }
+        }
+        
+        Some(Declaration { property, value, important })
+    }
+}
+```
+
+</CodeGroup>
+
+<Warning>
+CSS parsers must implement error recovery by skipping invalid rules and continuing to parse the rest of the stylesheet. A single syntax error should not prevent other valid rules from being applied.
+</Warning>
+
+## Media query evaluation
+
+Media queries allow conditional application of styles based on device characteristics.
+
+<Tabs>
+  <Tab title="Media types">
+    Basic media types target different output devices:
+    
+    ```css
+    @media screen {
+      /* Styles for screens */
+    }
+    
+    @media print {
+      /* Styles for printing */
+    }
+    
+    @media all {
+      /* Applies to all media types */
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Media features">
+    Media features test specific device characteristics:
+    
+    ```css
+    @media (min-width: 768px) {
+      /* Styles for viewports >= 768px */
+    }
+    
+    @media (orientation: landscape) {
+      /* Styles for landscape orientation */
+    }
+    
+    @media (prefers-color-scheme: dark) {
+      /* Styles for dark mode */
+    }
+    
+    @media (hover: hover) {
+      /* Styles for devices that support hover */
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Logical operators">
+    Combine multiple conditions:
+    
+    ```css
+    /* AND - both conditions must be true */
+    @media screen and (min-width: 768px) {
+      /* ... */
+    }
+    
+    /* OR - at least one condition must be true */
+    @media (min-width: 768px), (orientation: landscape) {
+      /* ... */
+    }
+    
+    /* NOT - negates the condition */
+    @media not print {
+      /* ... */
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Range syntax">
+    Modern range syntax for cleaner media queries:
+    
+    ```css
+    /* Old syntax */
+    @media (min-width: 400px) and (max-width: 1000px) {
+      /* ... */
+    }
+    
+    /* New range syntax */
+    @media (400px <= width <= 1000px) {
+      /* ... */
+    }
+    
+    @media (width >= 768px) {
+      /* Equivalent to (min-width: 768px) */
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+Media queries are evaluated at stylesheet parse time and whenever the relevant device characteristics change (viewport resize, orientation change, etc.). The browser maintains an active set of matching media queries to determine which rules apply.
+</Tip>
+
+<Check>
+You now understand the CSS engine's tokenization and parsing phases. Next, we'll explore how parsed CSS rules are matched to HTML elements through selector matching.
+</Check>

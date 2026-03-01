@@ -1,0 +1,143 @@
+---
+title: Browser engine
+description: Build a browser engine in C++ or Rust that renders Wikipedia with fonts, images, and CSS animations
+---
+
+<Info>
+  This project spans **Weeks 2-3** and covers the complete browser rendering pipeline from HTML parsing to GPU compositing.
+</Info>
+
+## Overview
+
+Build a fully functional browser engine capable of rendering complex web pages like Wikipedia. This project implements the core rendering pipeline: HTML parsing, CSS engine, layout calculation, and paint/composite phases.
+
+## Project requirements
+
+<CardGroup cols={2}>
+  <Card title="Language" icon="code">
+    C++ or Rust
+  </Card>
+  <Card title="Target site" icon="globe">
+    Render Wikipedia pages
+  </Card>
+  <Card title="Assets" icon="image">
+    Handle fonts and images
+  </Card>
+  <Card title="Animations" icon="sparkles">
+    Support CSS animations
+  </Card>
+</CardGroup>
+
+## Core components
+
+<Steps>
+  <Step title="HTML parsing">
+    Implement a complete HTML parser with:
+    
+    - Tokenization state machine (13 states, 67 transitions)
+    - Tree construction algorithm
+    - Error recovery and quirks mode
+    - Parser-blocking scripts and async/defer handling
+    
+    The tokenizer must handle all HTML5 parsing states and properly construct the DOM tree.
+  </Step>
+  
+  <Step title="CSS engine">
+    Build a CSS processor that handles:
+    
+    - Tokenizer and parser (grammar implementation)
+    - Selector matching with specificity calculation
+    - Cascade resolution algorithm
+    - Style computation and inheritance
+    - Media query evaluation
+    
+    The engine must correctly apply CSS rules according to specificity and cascade order.
+  </Step>
+  
+  <Step title="Layout engine">
+    Implement layout algorithms for:
+    
+    - Box model calculation
+    - Normal flow, floats, positioning schemes
+    - Flexbox algorithm: main/cross axis, flex basis, grow, shrink
+    - Grid algorithm: track sizing, placement, spanning
+    - Line breaking and text shaping
+    
+    The layout engine must produce pixel-perfect positioning for all elements.
+  </Step>
+  
+  <Step title="Paint and composite">
+    Create the rendering backend with:
+    
+    - Layer tree construction
+    - Paint recording and display lists
+    - Rasterization strategies
+    - GPU compositing and texture management
+    
+    This phase converts layout information into pixels on screen.
+  </Step>
+</Steps>
+
+## Performance measurement
+
+<Note>
+  Measure **every phase** of the rendering pipeline to understand performance characteristics.
+</Note>
+
+Your engine must instrument and report timing for:
+
+- **Parse**: HTML tokenization and tree construction
+- **Style**: CSS parsing and rule matching
+- **Layout**: Box model and positioning calculations
+- **Paint**: Display list creation
+- **Composite**: GPU texture upload and compositing
+
+## Deliverables
+
+<AccordionGroup>
+  <Accordion title="Functional browser engine">
+    A working implementation that can load and render Wikipedia pages with all content visible and properly laid out.
+  </Accordion>
+  
+  <Accordion title="Font rendering">
+    Support for web fonts and text shaping with proper glyph positioning.
+  </Accordion>
+  
+  <Accordion title="Image handling">
+    Load and display images (PNG, JPEG, GIF) with proper sizing and positioning.
+  </Accordion>
+  
+  <Accordion title="CSS animations">
+    Smooth CSS animations and transitions at 60fps.
+  </Accordion>
+  
+  <Accordion title="Performance metrics">
+    Detailed timing data for each rendering phase with profiling output.
+  </Accordion>
+</AccordionGroup>
+
+## Technical challenges
+
+<CardGroup cols={2}>
+  <Card title="State machine complexity" icon="diagram-project">
+    The HTML tokenizer requires 13 states and 67 transitions for spec compliance.
+  </Card>
+  <Card title="CSS specificity" icon="weight-hanging">
+    Implement the complete cascade algorithm with specificity calculation.
+  </Card>
+  <Card title="Flexbox algorithm" icon="grip-lines">
+    Handle complex flex layouts with nested containers and varying content.
+  </Card>
+  <Card title="GPU compositing" icon="layer-group">
+    Optimize layer creation and texture management for smooth rendering.
+  </Card>
+</CardGroup>
+
+## Success criteria
+
+- Wikipedia pages render correctly with all layout modes
+- Text is readable with proper font rendering
+- Images load and display at correct sizes
+- CSS animations run smoothly at 60fps
+- Performance metrics show timing for all pipeline phases
+- Engine handles malformed HTML gracefully

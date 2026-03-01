@@ -1,0 +1,218 @@
+---
+title: Fiber architecture
+description: Understanding React's Fiber reconciler architecture including work loop, reconciliation phases, effect lists, and the priority lane model
+---
+
+React's Fiber architecture is a complete rewrite of the reconciliation algorithm that enables concurrent rendering and fine-grained control over the rendering process.
+
+## Work loop and unit of work
+
+The Fiber reconciler operates on a work loop that processes units of work incrementally. This allows React to break rendering work into chunks and spread it across multiple frames.
+
+<Info>
+  The work loop is the heart of React's concurrent rendering capabilities. Each iteration processes a single "unit of work" - a Fiber node representing a component or DOM element.
+</Info>
+
+### How the work loop operates
+
+<Steps>
+  <Step title="Pick next unit of work">
+    The scheduler selects the next Fiber node to process based on priority levels and available time.
+  </Step>
+  
+  <Step title="Perform work">
+    React calls `beginWork` to process the Fiber node, which may create child Fibers, update state, or compute new props.
+  </Step>
+  
+  <Step title="Check for interruption">
+    After each unit of work, React checks if it needs to yield to the browser for high-priority tasks like user input.
+  </Step>
+  
+  <Step title="Continue or yield">
+    If time remains in the current frame, continue to the next unit of work. Otherwise, yield control back to the browser.
+  </Step>
+</Steps>
+
+Each unit of work represents a Fiber node in the component tree. The work loop traverses this tree depth-first, processing each node and its children.
+
+<Tabs>
+  <Tab title="beginWork">
+    Called when starting to process a Fiber node. This function:
+    - Compares old and new props
+    - Calls render methods or function components
+    - Creates child Fiber nodes
+    - Returns the next unit of work (first child)
+  </Tab>
+  
+  <Tab title="completeWork">
+    Called when finishing a Fiber node after all children are processed. This function:
+    - Creates or updates DOM nodes
+    - Processes effect lists
+    - Bubbles properties up the tree
+    - Returns the next sibling or parent
+  </Tab>
+</Tabs>
+
+## Reconciliation phases
+
+React's reconciliation process is split into two distinct phases to enable work interruption and prioritization.
+
+### Render phase
+
+The render phase is interruptible and produces a list of changes without mutating the DOM.
+
+<Info>
+  The render phase can be interrupted, aborted, or restarted. This is why side effects should never be placed in render methods.
+</Info>
+
+During the render phase, React:
+- Walks the Fiber tree
+- Computes differences between current and new state
+- Marks Fibers with effects (updates, deletions, insertions)
+- Builds the effect list
+- Can be paused and resumed
+
+### Commit phase
+
+The commit phase is synchronous and uninterruptible. It applies all the changes to the DOM in one go.
+
+<Steps>
+  <Step title="Before mutation">
+    React calls `getSnapshotBeforeUpdate` lifecycle method and schedules effect cleanup functions.
+  </Step>
+  
+  <Step title="Mutation">
+    React applies all DOM mutations, insertions, deletions, and updates. This is when the DOM actually changes.
+  </Step>
+  
+  <Step title="Layout effects">
+    React calls `useLayoutEffect` hooks and `componentDidMount`/`componentDidUpdate` lifecycle methods. These run synchronously before the browser paints.
+  </Step>
+  
+  <Step title="Passive effects">
+    React schedules `useEffect` hooks to run asynchronously after the paint.
+  </Step>
+</Steps>
+
+<Tabs>
+  <Tab title="Render phase">
+    - **Interruptible**: Can be paused and resumed
+    - **No side effects**: Pure computation only
+    - **No DOM changes**: Works with Fiber tree in memory
+    - **Can be restarted**: Higher priority work can interrupt
+  </Tab>
+  
+  <Tab title="Commit phase">
+    - **Synchronous**: Cannot be interrupted
+    - **Side effects allowed**: DOM mutations, ref updates
+    - **DOM changes**: Applies all mutations
+    - **Cannot be restarted**: Must complete once started
+  </Tab>
+</Tabs>
+
+## Effect list construction
+
+As React traverses the Fiber tree during the render phase, it constructs a linear list of Fibers that have side effects.
+
+<Info>
+  The effect list is an optimization that allows React to skip Fiber nodes without effects during the commit phase, making commits much faster.
+</Info>
+
+The effect list is a linked list containing only Fibers that need work in the commit phase:
+- Component updates
+- DOM insertions
+- DOM deletions
+- Ref updates
+- Effect hook callbacks
+
+Instead of traversing the entire Fiber tree again during commit, React only walks the effect list. For large trees with few changes, this can be dramatically faster.
+
+### Effect tags
+
+Each Fiber in the effect list has effect tags that describe what work needs to be done:
+
+<Tabs>
+  <Tab title="Placement">
+    A new Fiber that needs to be inserted into the DOM.
+  </Tab>
+  
+  <Tab title="Update">
+    An existing Fiber with changed props or state that needs DOM updates.
+  </Tab>
+  
+  <Tab title="Deletion">
+    A Fiber that needs to be removed from the DOM.
+  </Tab>
+  
+  <Tab title="Ref">
+    A Fiber with a ref that needs to be attached or detached.
+  </Tab>
+  
+  <Tab title="Callback">
+    A Fiber with lifecycle methods or effect hooks to call.
+  </Tab>
+</Tabs>
+
+## Priority levels and lane model
+
+React uses a sophisticated priority system called "lanes" to manage concurrent work and ensure the most important updates happen first.
+
+### Priority levels
+
+Different types of updates have different priority levels:
+
+<Steps>
+  <Step title="Immediate/Sync">
+    Discrete user input like clicks and key presses. Must be processed immediately to feel responsive.
+  </Step>
+  
+  <Step title="User-blocking">
+    Continuous user input like hover or scroll. Should complete quickly but can tolerate slight delays.
+  </Step>
+  
+  <Step title="Normal">
+    Network responses, animations not triggered by user input. Default priority for most updates.
+  </Step>
+  
+  <Step title="Low">
+    Updates that can be deferred, like analytics or logging.
+  </Step>
+  
+  <Step title="Idle">
+    Work that only happens when the browser is idle, like offscreen rendering.
+  </Step>
+</Steps>
+
+### Lane model
+
+React's lane model uses a bitmask system where each "lane" represents a priority level or category of work.
+
+<Info>
+  Lanes are represented as 32-bit integers where each bit represents a lane. This allows React to efficiently check for overlapping priorities using bitwise operations.
+</Info>
+
+The lane model provides several advantages:
+
+<Tabs>
+  <Tab title="Multiple priorities">
+    A single render can include updates from multiple priority levels. Lanes make it easy to track and manage these mixed priorities.
+  </Tab>
+  
+  <Tab title="Efficient checks">
+    Bitwise operations like `lanes & otherLanes` quickly determine if priorities overlap, which lanes are higher priority, or if work can be batched.
+  </Tab>
+  
+  <Tab title="Starvation prevention">
+    Low-priority work that has been pending too long can be promoted to higher priority lanes to ensure it eventually completes.
+  </Tab>
+  
+  <Tab title="Entanglement">
+    When a low-priority update depends on a high-priority update, their lanes can be entangled to ensure they render together.
+  </Tab>
+</Tabs>
+
+When a state update occurs, React assigns it to a lane based on its priority. During the render phase, React processes lanes from highest to lowest priority, interrupting lower-priority work when higher-priority updates arrive.
+
+<Info>
+  The lane model is what enables React's concurrent features like `useTransition` and `useDeferredValue` to mark updates as lower priority while keeping the UI responsive.
+</Info>

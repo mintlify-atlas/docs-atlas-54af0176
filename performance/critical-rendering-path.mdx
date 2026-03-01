@@ -1,0 +1,801 @@
+---
+title: Critical rendering path
+description: Optimize the critical rendering path by eliminating render-blocking resources, minimizing CSS, deferring JavaScript, and using preload strategies
+---
+
+## Overview
+
+The critical rendering path is the sequence of steps the browser takes to convert HTML, CSS, and JavaScript into a rendered page. Optimizing this path is crucial for fast initial page loads and excellent user experience.
+
+<Info>
+The critical rendering path directly impacts First Contentful Paint (FCP) and Largest Contentful Paint (LCP), two key Core Web Vitals metrics.
+</Info>
+
+## Understanding the rendering path
+
+The browser follows these steps to render a page:
+
+<Steps>
+  <Step title="Parse HTML">
+    The browser parses HTML to construct the DOM (Document Object Model) tree.
+  </Step>
+  
+  <Step title="Parse CSS">
+    CSS files are parsed to construct the CSSOM (CSS Object Model) tree.
+  </Step>
+  
+  <Step title="Execute JavaScript">
+    JavaScript can modify both DOM and CSSOM, potentially blocking rendering.
+  </Step>
+  
+  <Step title="Construct render tree">
+    DOM and CSSOM are combined to create the render tree (only visible elements).
+  </Step>
+  
+  <Step title="Layout">
+    Calculate exact position and size of each element.
+  </Step>
+  
+  <Step title="Paint">
+    Draw pixels to the screen.
+  </Step>
+</Steps>
+
+<Warning>
+CSS is render-blocking by default. JavaScript is both parser-blocking and render-blocking. These are the primary optimization targets.
+</Warning>
+
+## Eliminate render-blocking resources
+
+Render-blocking resources prevent the browser from displaying content until they're downloaded and processed.
+
+### Identifying render-blocking resources
+
+<Tabs>
+  <Tab title="Lighthouse">
+    Run a Lighthouse audit and check the "Eliminate render-blocking resources" opportunity.
+    
+    ```bash
+    lighthouse https://example.com --view
+    ```
+    
+    Look for:
+    - Stylesheets in `<head>`
+    - Synchronous `<script>` tags
+    - Large CSS files
+    - Unused CSS rules
+  </Tab>
+  
+  <Tab title="Chrome DevTools">
+    1. Open DevTools (F12)
+    2. Go to Performance tab
+    3. Record page load
+    4. Look for long yellow/purple blocks labeled "Parse Stylesheet" or "Evaluate Script"
+    
+    These blocks show render-blocking resources delaying First Contentful Paint.
+  </Tab>
+  
+  <Tab title="WebPageTest">
+    Visit [WebPageTest](https://www.webpagetest.org) and analyze your site.
+    
+    Check the waterfall chart:
+    - Resources with orange/red start bars are render-blocking
+    - The "Start Render" line shows when blocking ends
+  </Tab>
+</Tabs>
+
+### Async and defer scripts
+
+<CodeGroup>
+```html Blocking (default)
+<!-- Blocks HTML parsing until downloaded and executed -->
+<script src="script.js"></script>
+
+<div>This content waits for script.js</div>
+```
+
+```html Async
+<!-- Downloads in parallel, executes immediately when ready -->
+<script src="analytics.js" async></script>
+
+<!-- Best for: independent scripts like analytics, ads -->
+<!-- Execution order: not guaranteed -->
+```
+
+```html Defer
+<!-- Downloads in parallel, executes after HTML parsing -->
+<script src="app.js" defer></script>
+
+<!-- Best for: scripts that need the DOM -->
+<!-- Execution order: guaranteed (document order) -->
+```
+
+```html Module scripts (defer by default)
+<!-- Type="module" scripts are deferred automatically -->
+<script type="module" src="main.js"></script>
+
+<!-- Modules maintain dependency order -->
+```
+</CodeGroup>
+
+<AccordionGroup>
+  <Accordion title="When to use async">
+    Use `async` for scripts that:
+    - Don't depend on other scripts
+    - Don't modify the DOM before it's ready
+    - Can execute in any order
+    
+    **Examples:** Analytics, ads, social media widgets
+    
+    ```html
+    <script src="https://www.googletagmanager.com/gtag/js" async></script>
+    <script src="//connect.facebook.net/en_US/sdk.js" async></script>
+    ```
+  </Accordion>
+  
+  <Accordion title="When to use defer">
+    Use `defer` for scripts that:
+    - Need the full DOM to be parsed
+    - Depend on other scripts (execution order matters)
+    - Can wait until HTML parsing completes
+    
+    **Examples:** Main application code, UI libraries, DOM manipulation
+    
+    ```html
+    <script src="jquery.js" defer></script>
+    <script src="app.js" defer></script>
+    <!-- app.js executes after jquery.js -->
+    ```
+  </Accordion>
+  
+  <Accordion title="When to use neither">
+    Use blocking scripts (no async/defer) only when:
+    - Script must execute before page renders
+    - Other scripts depend on it immediately
+    
+    **Examples:** Critical polyfills, A/B testing that prevents FOUC
+    
+    ```html
+    <!-- Critical: must run before rendering -->
+    <script src="critical-polyfill.js"></script>
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Minimize critical CSS
+
+Critical CSS is the minimum CSS needed to render above-the-fold content.
+
+### Extracting critical CSS
+
+<Steps>
+  <Step title="Identify critical styles">
+    Determine which CSS rules are needed for above-the-fold content.
+  </Step>
+  
+  <Step title="Inline critical CSS">
+    Place critical CSS directly in the `<head>` to eliminate the network request.
+  </Step>
+  
+  <Step title="Defer non-critical CSS">
+    Load remaining CSS asynchronously to avoid blocking rendering.
+  </Step>
+</Steps>
+
+### Implementation approaches
+
+<Tabs>
+  <Tab title="Manual extraction">
+    ```html
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <!-- Inline critical CSS -->
+        <style>
+          /* Critical styles for header, hero, above-fold content */
+          body { margin: 0; font-family: system-ui; }
+          .header { height: 60px; background: #fff; }
+          .hero { height: 400px; background: #f0f0f0; }
+        </style>
+        
+        <!-- Async load full stylesheet -->
+        <link rel="preload" href="styles.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+        <noscript><link rel="stylesheet" href="styles.css"></noscript>
+      </head>
+      <body>
+        <!-- Content -->
+      </body>
+    </html>
+    ```
+  </Tab>
+  
+  <Tab title="Automated with Critical">
+    ```javascript
+    const critical = require('critical');
+    
+    critical.generate({
+      inline: true,
+      base: 'dist/',
+      src: 'index.html',
+      dest: 'index-critical.html',
+      dimensions: [
+        { height: 900, width: 1200 },
+        { height: 900, width: 375 }
+      ],
+      penthouse: {
+        blockJSRequests: false,
+      }
+    });
+    ```
+    
+    This automatically extracts and inlines critical CSS.
+  </Tab>
+  
+  <Tab title="Next.js approach">
+    ```jsx
+    // app/layout.js
+    import './globals.css';
+    
+    export default function RootLayout({ children }) {
+      return (
+        <html>
+          <head>
+            {/* Next.js automatically extracts critical CSS */}
+          </head>
+          <body>{children}</body>
+        </html>
+      );
+    }
+    ```
+    
+    Next.js automatically handles critical CSS extraction and code splitting for CSS.
+  </Tab>
+</Tabs>
+
+### Async CSS loading pattern
+
+```html
+<!-- Preload CSS file -->
+<link rel="preload" href="styles.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+
+<!-- Fallback for browsers without JavaScript -->
+<noscript>
+  <link rel="stylesheet" href="styles.css">
+</noscript>
+```
+
+<Tip>
+Use media queries to load CSS conditionally:
+
+```html
+<link rel="stylesheet" href="print.css" media="print">
+<link rel="stylesheet" href="mobile.css" media="(max-width: 768px)">
+```
+
+Browsers still download all stylesheets but only block rendering for matching media queries.
+</Tip>
+
+## Defer non-critical JavaScript
+
+Defer JavaScript that's not essential for initial rendering to improve page load performance.
+
+### Lazy loading JavaScript
+
+<CodeGroup>
+```javascript Dynamic imports
+// Load module only when needed
+button.addEventListener('click', async () => {
+  const module = await import('./heavy-feature.js');
+  module.initialize();
+});
+
+// Conditional loading
+if (window.innerWidth > 768) {
+  import('./desktop-features.js').then(module => {
+    module.init();
+  });
+}
+```
+
+```javascript Intersection Observer
+// Load script when element is visible
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      import('./chart-library.js').then(module => {
+        module.renderChart(entry.target);
+      });
+      observer.disconnect();
+    }
+  });
+});
+
+observer.observe(document.querySelector('.chart-container'));
+```
+
+```javascript Idle loading
+// Load during browser idle time
+if ('requestIdleCallback' in window) {
+  requestIdleCallback(() => {
+    import('./analytics.js').then(module => {
+      module.trackPageView();
+    });
+  });
+} else {
+  // Fallback for browsers without requestIdleCallback
+  setTimeout(() => {
+    import('./analytics.js').then(module => {
+      module.trackPageView();
+    });
+  }, 1000);
+}
+```
+</CodeGroup>
+
+### Third-party script optimization
+
+<AccordionGroup>
+  <Accordion title="Self-host third-party scripts">
+    Download and serve third-party scripts from your own domain to improve caching and reduce DNS lookups.
+    
+    ```html
+    <!-- Before: external CDN -->
+    <script src="https://cdn.example.com/library.js"></script>
+    
+    <!-- After: self-hosted -->
+    <script src="/js/library.js" defer></script>
+    ```
+    
+    **Benefits:**
+    - Control over caching headers
+    - No third-party DNS lookup
+    - Better privacy
+    - Reduced connection overhead
+  </Accordion>
+  
+  <Accordion title="Use facade pattern">
+    Replace heavy third-party embeds with lightweight facades that load the real thing on interaction.
+    
+    ```jsx
+    import { useState } from 'react';
+    
+    function YouTubeEmbed({ videoId }) {
+      const [loaded, setLoaded] = useState(false);
+      
+      if (!loaded) {
+        return (
+          <div
+            className="youtube-facade"
+            style={{
+              backgroundImage: `url(https://i.ytimg.com/vi/${videoId}/hqdefault.jpg)`,
+              cursor: 'pointer'
+            }}
+            onClick={() => setLoaded(true)}
+          >
+            <div className="play-button">▶</div>
+          </div>
+        );
+      }
+      
+      return (
+        <iframe
+          src={`https://www.youtube.com/embed/${videoId}?autoplay=1`}
+          allow="autoplay"
+          allowFullScreen
+        />
+      );
+    }
+    ```
+    
+    Saves ~500KB by loading YouTube player only on click.
+  </Accordion>
+  
+  <Accordion title="Delay non-essential scripts">
+    Load analytics, social widgets, and ads after critical content.
+    
+    ```javascript
+    // Load after window load event
+    window.addEventListener('load', () => {
+      // Analytics
+      const analyticsScript = document.createElement('script');
+      analyticsScript.src = 'https://www.google-analytics.com/analytics.js';
+      document.head.appendChild(analyticsScript);
+      
+      // Social widgets
+      const fbScript = document.createElement('script');
+      fbScript.src = 'https://connect.facebook.net/en_US/sdk.js';
+      fbScript.async = true;
+      document.body.appendChild(fbScript);
+    });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+<Warning>
+Third-party scripts can significantly impact performance. Audit them regularly and remove unused ones.
+</Warning>
+
+## Preload, prefetch, and preconnect strategies
+
+Resource hints tell the browser to optimize loading for specific resources.
+
+### Resource hint types
+
+<CardGroup cols={2}>
+  <Card title="Preload" icon="bolt">
+    Load critical resources early in the page lifecycle.
+    
+    **Priority:** High  
+    **Use for:** Critical fonts, CSS, scripts, images
+  </Card>
+  
+  <Card title="Prefetch" icon="download">
+    Load resources needed for future navigation during idle time.
+    
+    **Priority:** Low  
+    **Use for:** Next page resources, likely user actions
+  </Card>
+  
+  <Card title="Preconnect" icon="link">
+    Establish early connections to important third-party origins.
+    
+    **Priority:** Medium  
+    **Use for:** API domains, CDNs, fonts
+  </Card>
+  
+  <Card title="DNS-prefetch" icon="server">
+    Resolve DNS early for third-party domains.
+    
+    **Priority:** Low  
+    **Use for:** Multiple third-party domains
+  </Card>
+</CardGroup>
+
+### Preload examples
+
+<Tabs>
+  <Tab title="Fonts">
+    ```html
+    <!-- Preload critical fonts to avoid FOIT/FOUT -->
+    <link
+      rel="preload"
+      href="/fonts/inter-var.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    
+    <link
+      rel="preload"
+      href="/fonts/roboto-mono.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    
+    <style>
+      @font-face {
+        font-family: 'Inter';
+        src: url('/fonts/inter-var.woff2') format('woff2');
+        font-display: swap;
+      }
+    </style>
+    ```
+    
+    <Info>Always include `crossorigin` attribute for font preloads, even for same-origin fonts.</Info>
+  </Tab>
+  
+  <Tab title="Images">
+    ```html
+    <!-- Preload hero image to improve LCP -->
+    <link
+      rel="preload"
+      href="/images/hero.webp"
+      as="image"
+      type="image/webp"
+    />
+    
+    <!-- Responsive image preload -->
+    <link
+      rel="preload"
+      href="/images/hero-mobile.webp"
+      as="image"
+      type="image/webp"
+      media="(max-width: 768px)"
+    />
+    
+    <link
+      rel="preload"
+      href="/images/hero-desktop.webp"
+      as="image"
+      type="image/webp"
+      media="(min-width: 769px)"
+    />
+    ```
+  </Tab>
+  
+  <Tab title="Scripts and styles">
+    ```html
+    <!-- Preload critical CSS -->
+    <link rel="preload" href="/css/critical.css" as="style" />
+    <link rel="stylesheet" href="/css/critical.css" />
+    
+    <!-- Preload important scripts -->
+    <link rel="preload" href="/js/app.js" as="script" />
+    <script src="/js/app.js" defer></script>
+    
+    <!-- Preload module scripts -->
+    <link rel="modulepreload" href="/js/module.js" />
+    <script type="module" src="/js/module.js"></script>
+    ```
+  </Tab>
+</Tabs>
+
+### Prefetch examples
+
+```html
+<!-- Prefetch next page -->
+<link rel="prefetch" href="/page2.html" />
+
+<!-- Prefetch route chunks -->
+<link rel="prefetch" href="/js/dashboard-chunk.js" />
+
+<!-- Prefetch API data -->
+<link rel="prefetch" href="/api/user-data.json" />
+
+<!-- Prefetch images for next page -->
+<link rel="prefetch" href="/images/page2-hero.webp" as="image" />
+```
+
+<Tip>
+Prefetch resources during idle time:
+
+```javascript
+if ('requestIdleCallback' in window) {
+  requestIdleCallback(() => {
+    const link = document.createElement('link');
+    link.rel = 'prefetch';
+    link.href = '/dashboard';
+    document.head.appendChild(link);
+  });
+}
+```
+</Tip>
+
+### Preconnect examples
+
+<CodeGroup>
+```html Basic preconnect
+<!-- Connect to API domain early -->
+<link rel="preconnect" href="https://api.example.com" />
+
+<!-- Connect to CDN -->
+<link rel="preconnect" href="https://cdn.example.com" />
+
+<!-- Connect to Google Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+```
+
+```html DNS-prefetch fallback
+<!-- Modern browsers use preconnect, older use dns-prefetch -->
+<link rel="preconnect" href="https://api.example.com" />
+<link rel="dns-prefetch" href="https://api.example.com" />
+
+<!-- DNS-prefetch for multiple third-party domains -->
+<link rel="dns-prefetch" href="https://analytics.google.com" />
+<link rel="dns-prefetch" href="https://connect.facebook.net" />
+<link rel="dns-prefetch" href="https://platform.twitter.com" />
+```
+
+```javascript Dynamic preconnect
+// Preconnect based on user interaction
+const loginButton = document.querySelector('#login');
+
+loginButton.addEventListener('mouseenter', () => {
+  const link = document.createElement('link');
+  link.rel = 'preconnect';
+  link.href = 'https://auth.example.com';
+  document.head.appendChild(link);
+}, { once: true });
+```
+</CodeGroup>
+
+### Resource hint decision tree
+
+<Steps>
+  <Step title="Is it critical for initial render?">
+    Yes → Use **preload**
+    
+    No → Go to step 2
+  </Step>
+  
+  <Step title="Will the user likely need it soon?">
+    Yes → Use **prefetch**
+    
+    No → Go to step 3
+  </Step>
+  
+  <Step title="Does it require a third-party connection?">
+    Yes → Use **preconnect** or **dns-prefetch**
+    
+    No → Don't use resource hints
+  </Step>
+</Steps>
+
+<Warning>
+Don't overuse resource hints. Too many preloads can delay actual critical resources. Limit to 3-5 preloads per page.
+</Warning>
+
+## Complete optimization example
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Optimized Page</title>
+    
+    <!-- Preconnect to critical origins -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://api.example.com" />
+    
+    <!-- Preload critical fonts -->
+    <link
+      rel="preload"
+      href="/fonts/inter.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    
+    <!-- Preload hero image (LCP element) -->
+    <link
+      rel="preload"
+      href="/images/hero.webp"
+      as="image"
+      type="image/webp"
+      fetchpriority="high"
+    />
+    
+    <!-- Inline critical CSS -->
+    <style>
+      /* Critical above-the-fold styles */
+      body{margin:0;font-family:Inter,system-ui,sans-serif}
+      .header{height:60px;background:#fff;box-shadow:0 2px 4px rgba(0,0,0,.1)}
+      .hero{height:400px;background:url(/images/hero.webp) center/cover}
+    </style>
+    
+    <!-- Async load full stylesheet -->
+    <link
+      rel="preload"
+      href="/css/styles.css"
+      as="style"
+      onload="this.onload=null;this.rel='stylesheet'"
+    />
+    <noscript><link rel="stylesheet" href="/css/styles.css" /></noscript>
+    
+    <!-- Preload critical script -->
+    <link rel="modulepreload" href="/js/app.js" />
+  </head>
+  
+  <body>
+    <header class="header">
+      <!-- Header content -->
+    </header>
+    
+    <section class="hero">
+      <!-- Hero content -->
+    </section>
+    
+    <!-- Main content -->
+    <main>
+      <!-- Content -->
+    </main>
+    
+    <!-- Deferred main script -->
+    <script type="module" src="/js/app.js"></script>
+    
+    <!-- Async analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=GA_MEASUREMENT_ID"></script>
+    
+    <!-- Prefetch next likely page -->
+    <link rel="prefetch" href="/dashboard" />
+  </body>
+</html>
+```
+
+## Measuring impact
+
+<Tabs>
+  <Tab title="Before optimization">
+    ```
+    Lighthouse Score: 45/100
+    
+    FCP: 3.2s
+    LCP: 5.8s
+    TTI: 7.2s
+    CLS: 0.15
+    
+    Render-blocking resources: 4 (2.1s)
+    - main.css (850ms)
+    - fonts.css (320ms)
+    - app.js (680ms)
+    - analytics.js (250ms)
+    ```
+  </Tab>
+  
+  <Tab title="After optimization">
+    ```
+    Lighthouse Score: 98/100
+    
+    FCP: 0.9s ⬇ 2.3s (72% improvement)
+    LCP: 1.8s ⬇ 4.0s (69% improvement)
+    TTI: 2.1s ⬇ 5.1s (71% improvement)
+    CLS: 0.02 ⬇ 0.13 (87% improvement)
+    
+    Render-blocking resources: 0 (0s)
+    - Critical CSS inlined
+    - Fonts preloaded
+    - Scripts deferred
+    - Analytics async
+    ```
+  </Tab>
+</Tabs>
+
+## Critical rendering path checklist
+
+<AccordionGroup>
+  <Accordion title="HTML optimization">
+    - [ ] Minimize HTML size
+    - [ ] Enable compression (gzip/brotli)
+    - [ ] Use early hints (103 status code)
+    - [ ] Optimize server response time (TTFB < 200ms)
+  </Accordion>
+  
+  <Accordion title="CSS optimization">
+    - [ ] Extract and inline critical CSS
+    - [ ] Async load non-critical CSS
+    - [ ] Remove unused CSS
+    - [ ] Minimize CSS file size
+    - [ ] Use media queries for conditional loading
+  </Accordion>
+  
+  <Accordion title="JavaScript optimization">
+    - [ ] Defer non-critical scripts
+    - [ ] Use async for independent scripts
+    - [ ] Minimize JavaScript execution time
+    - [ ] Code split and lazy load
+    - [ ] Optimize third-party scripts
+  </Accordion>
+  
+  <Accordion title="Resource loading">
+    - [ ] Preload critical resources
+    - [ ] Preconnect to required origins
+    - [ ] Prefetch likely next resources
+    - [ ] Optimize font loading
+    - [ ] Lazy load below-fold images
+  </Accordion>
+  
+  <Accordion title="Measurement">
+    - [ ] Lighthouse score > 90
+    - [ ] FCP < 1.8s
+    - [ ] LCP < 2.5s
+    - [ ] TTI < 3.8s
+    - [ ] Monitor real user metrics (RUM)
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Profiling tools" icon="magnifying-glass-chart" href="/performance/profiling-tools">
+    Use Chrome DevTools and Lighthouse to identify optimization opportunities
+  </Card>
+  
+  <Card title="Optimization techniques" icon="gauge-high" href="/performance/optimization-techniques">
+    Apply memoization, virtualization, and code splitting for better performance
+  </Card>
+</CardGroup>

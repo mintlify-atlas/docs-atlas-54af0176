@@ -1,0 +1,478 @@
+---
+title: Paint and composite
+description: Understand layer tree construction, paint recording, rasterization, and GPU compositing in modern browser rendering
+---
+
+After layout calculates the position and size of every element, the paint and composite phases transform the layout tree into pixels on the screen. This involves sophisticated GPU acceleration and multi-threaded rendering.
+
+<Info>
+Modern browsers separate painting and compositing to enable smooth scrolling, animations, and visual effects without recalculating layout.
+</Info>
+
+## Layer tree construction
+
+The browser constructs a layer tree to determine which elements should be painted to separate layers for efficient compositing.
+
+### Why layers matter
+
+Layers enable performance optimizations:
+
+<CardGroup cols={2}>
+  <Card title="Isolated repainting" icon="layer-group">
+    Changes to one layer don't require repainting other layers, reducing paint work.
+  </Card>
+  
+  <Card title="GPU acceleration" icon="microchip">
+    Layers can be uploaded to the GPU as textures and composited with hardware acceleration.
+  </Card>
+  
+  <Card title="Transform optimization" icon="arrows-rotate">
+    CSS transforms on a layer can be applied by the GPU without repainting.
+  </Card>
+  
+  <Card title="Smooth animations" icon="film">
+    Animations of certain properties (transform, opacity) can run on the compositor thread.
+  </Card>
+</CardGroup>
+
+### What creates a layer?
+
+Elements are promoted to their own layer based on several criteria:
+
+<Tabs>
+  <Tab title="Explicit promotion">
+    CSS properties that explicitly create layers:
+    
+    ```css
+    .layer {
+      /* Any of these creates a new layer */
+      will-change: transform;
+      transform: translateZ(0);
+      transform-style: preserve-3d;
+      perspective: 1000px;
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Visual effects">
+    Properties requiring special rendering:
+    
+    ```css
+    .layer {
+      /* These create layers for composition */
+      opacity: 0.9;
+      filter: blur(10px);
+      backdrop-filter: blur(5px);
+      mix-blend-mode: multiply;
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Overflow and clipping">
+    Elements with scrolling or clipping:
+    
+    ```css
+    .layer {
+      overflow: auto; /* Scrollable content */
+      clip-path: polygon(...);
+      mask-image: url(...);
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Special elements">
+    Certain element types:
+    
+    - `<video>` and `<canvas>` elements
+    - Elements with CSS 3D transforms
+    - Elements with accelerated CSS animations
+    - Root element
+    - Fixed and sticky positioned elements (sometimes)
+  </Tab>
+</Tabs>
+
+<Warning>
+Creating too many layers increases memory usage and compositor overhead. Only promote elements that genuinely benefit from layering.
+</Warning>
+
+### Layer tree structure
+
+The layer tree is a hierarchy of compositing layers:
+
+<Steps>
+  <Step title="Identify compositing reasons">
+    Scan the layout tree to find elements that require their own layer based on CSS properties and content type.
+  </Step>
+  
+  <Step title="Build layer tree">
+    Create a tree of layers where each layer corresponds to one or more elements that will be painted together.
+  </Step>
+  
+  <Step title="Determine layer boundaries">
+    Calculate the size and position of each layer in the layer tree.
+  </Step>
+  
+  <Step title="Assign elements to layers">
+    Map each layout object to the layer it should be painted into.
+  </Step>
+</Steps>
+
+## Paint recording and display lists
+
+Paint recording captures drawing commands without immediately rasterizing them to pixels.
+
+### Display lists
+
+A display list is a sequence of drawing commands that can be replayed later:
+
+```cpp
+// Conceptual display list structure
+DisplayList {
+  DrawRect(x: 0, y: 0, width: 100, height: 50, color: blue)
+  DrawText("Hello", x: 10, y: 20, font: Arial, size: 16)
+  DrawImage(image_id: 123, x: 50, y: 30, width: 200, height: 150)
+  DrawRoundedRect(x: 100, y: 100, width: 80, height: 40, radius: 5)
+}
+```
+
+<Info>
+Display lists decouple paint recording from rasterization, enabling optimizations like partial invalidation and threaded rasterization.
+</Info>
+
+### Paint recording process
+
+The browser walks the layer tree and records paint commands:
+
+<Steps>
+  <Step title="Create graphics context">
+    Initialize a recording context for each layer's display list.
+  </Step>
+  
+  <Step title="Walk the paint tree">
+    Traverse elements assigned to the layer in paint order (back to front).
+  </Step>
+  
+  <Step title="Record drawing commands">
+    For each element, emit paint commands:
+    - Background (color, image, gradient)
+    - Border
+    - Decorations (outline, box-shadow, text-decoration)
+    - Content (text, replaced elements, children)
+  </Step>
+  
+  <Step title="Apply effects">
+    Record commands for filters, masks, blend modes, and clipping.
+  </Step>
+  
+  <Step title="Optimize display list">
+    Cull invisible commands, merge adjacent operations, deduplicate shared resources.
+  </Step>
+</Steps>
+
+### Paint invalidation
+
+When elements change, the browser determines which parts need repainting:
+
+<Tabs>
+  <Tab title="Full repaint">
+    The entire layer is marked dirty and must be completely repainted.
+    
+    Triggered by:
+    - Major layout changes
+    - Layer boundary changes
+    - Fundamental style changes
+  </Tab>
+  
+  <Tab title="Partial repaint">
+    Only a region of the layer is marked dirty.
+    
+    Triggered by:
+    - Local style changes (color, background)
+    - Cursor blinking
+    - Small content updates
+    
+    Optimization: Only replay display list commands intersecting the dirty region.
+  </Tab>
+  
+  <Tab title="No repaint">
+    Some changes don't require repainting:
+    
+    - Transform changes on composited layers
+    - Opacity changes on composited layers
+    - Scrolling within a scrollable layer
+    
+    These can be handled purely by the compositor.
+  </Tab>
+</Tabs>
+
+<Warning>
+Paint invalidation is complex. Incorrectly invalidating too little causes visual bugs, while invalidating too much wastes performance.
+</Warning>
+
+## Rasterization strategies
+
+Rasterization converts display lists into pixel buffers (bitmaps).
+
+### Software rasterization
+
+CPU-based rasterization using algorithms like Skia:
+
+<Steps>
+  <Step title="Allocate bitmap">
+    Create a pixel buffer in RAM matching the layer's size.
+  </Step>
+  
+  <Step title="Rasterize commands">
+    Execute each display list command, writing pixels to the bitmap.
+  </Step>
+  
+  <Step title="Apply antialiasing">
+    Use subpixel sampling to smooth edges and text.
+  </Step>
+  
+  <Step title="Upload to GPU">
+    Transfer the rasterized bitmap to GPU memory as a texture.
+  </Step>
+</Steps>
+
+**Advantages:**
+- Highly accurate rendering
+- Supports all drawing operations
+- Works on systems without GPU support
+
+**Disadvantages:**
+- Slower than GPU rasterization
+- Blocks the main thread if not done asynchronously
+
+### GPU rasterization
+
+Direct rasterization using GPU shaders:
+
+<Steps>
+  <Step title="Translate to GPU commands">
+    Convert display list commands to GPU draw calls and shader programs.
+  </Step>
+  
+  <Step title="Execute on GPU">
+    Run shaders to rasterize directly into GPU textures.
+  </Step>
+  
+  <Step title="Handle unsupported operations">
+    Fall back to software rasterization for complex operations the GPU can't handle efficiently.
+  </Step>
+</Steps>
+
+**Advantages:**
+- Much faster for simple shapes and common operations
+- Reduces CPU load
+- Eliminates bitmap upload step
+
+**Disadvantages:**
+- May be less accurate for complex paths
+- GPU memory constraints
+- Driver compatibility issues
+
+<Info>
+Modern browsers use hybrid approaches: GPU rasterization for most content with software fallback for complex cases.
+</Info>
+
+### Tiling for large layers
+
+Large layers are divided into tiles for efficient rasterization:
+
+<Steps>
+  <Step title="Divide into tiles">
+    Split the layer into fixed-size tiles (e.g., 256×256 pixels).
+  </Step>
+  
+  <Step title="Prioritize visible tiles">
+    Rasterize tiles in viewport first, then nearby tiles that might scroll into view.
+  </Step>
+  
+  <Step title="Rasterize in parallel">
+    Use multiple threads to rasterize different tiles concurrently.
+  </Step>
+  
+  <Step title="Manage tile cache">
+    Keep rasterized tiles in a cache, evicting least-recently-used tiles when memory is tight.
+  </Step>
+</Steps>
+
+## GPU compositing and texture management
+
+The compositor combines all layers into the final frame.
+
+### Compositor thread
+
+Compositing runs on a dedicated thread, independent of the main thread:
+
+<CardGroup cols={2}>
+  <Card title="Smooth scrolling" icon="arrows-up-down">
+    Scrolling can update layer positions on the compositor thread without blocking on JavaScript or layout.
+  </Card>
+  
+  <Card title="Smooth animations" icon="wand-magic-sparkles">
+    Transform and opacity animations run on the compositor, maintaining 60fps even when the main thread is busy.
+  </Card>
+  
+  <Card title="Input responsiveness" icon="hand-pointer">
+    The compositor can respond to input events faster by not waiting for the main thread.
+  </Card>
+  
+  <Card title="Reduced jank" icon="chart-line">
+    Separating compositing from JavaScript execution prevents scripting from causing frame drops.
+  </Card>
+</CardGroup>
+
+### Compositing algorithm
+
+The compositor draws the final frame:
+
+<Steps>
+  <Step title="Receive layer updates">
+    Get the layer tree, transforms, and opacity values from the main thread.
+  </Step>
+  
+  <Step title="Build quad list">
+    Create a list of textured quads (rectangles) representing each layer, with position, texture ID, transform, and effects.
+  </Step>
+  
+  <Step title="Sort for rendering">
+    Order quads from back to front based on z-index and stacking contexts.
+  </Step>
+  
+  <Step title="Draw to framebuffer">
+    Use the GPU to draw each quad:
+    - Bind the layer's texture
+    - Apply transform matrix
+    - Apply opacity and blend mode
+    - Draw two triangles forming a rectangle
+  </Step>
+  
+  <Step title="Present to screen">
+    Swap buffers to display the completed frame.
+  </Step>
+</Steps>
+
+### Texture management
+
+Managing GPU textures efficiently is critical for performance:
+
+<Tabs>
+  <Tab title="Upload strategy">
+    Minimize texture uploads by:
+    - Reusing textures when content doesn't change
+    - Uploading asynchronously when possible
+    - Compressing textures for faster transfer
+  </Tab>
+  
+  <Tab title="Memory management">
+    GPU memory is limited:
+    - Evict textures for offscreen or distant layers
+    - Use lower resolution textures for scaled-down layers
+    - Share textures between similar layers when possible
+  </Tab>
+  
+  <Tab title="Atlas packing">
+    Combine small textures into texture atlases:
+    - Reduces GPU state changes
+    - Improves memory locality
+    - Minimizes texture binds during rendering
+  </Tab>
+</Tabs>
+
+<Warning>
+Texture memory can be exhausted quickly with many layers or large images. Monitor GPU memory usage and implement aggressive eviction policies.
+</Warning>
+
+### Advanced compositing features
+
+Modern compositors support sophisticated effects:
+
+<Steps>
+  <Step title="Filters and effects">
+    Apply blur, brightness, contrast, and other filters using GPU shaders during compositing.
+  </Step>
+  
+  <Step title="Blend modes">
+    Implement blend modes (multiply, screen, overlay) using custom shader programs.
+  </Step>
+  
+  <Step title="Backdrop filters">
+    Capture the backdrop behind an element, apply filters, and composite the result (e.g., frosted glass effect).
+  </Step>
+  
+  <Step title="3D transforms">
+    Use transformation matrices to rotate, scale, and position layers in 3D space with perspective.
+  </Step>
+</Steps>
+
+## Performance optimization strategies
+
+<CardGroup cols={2}>
+  <Card title="Minimize layer count" icon="layer-group">
+    Each layer has memory and processing overhead. Only create layers when necessary for performance.
+  </Card>
+  
+  <Card title="Use compositor-only properties" icon="rocket">
+    Animate `transform` and `opacity` instead of properties that trigger layout or paint.
+  </Card>
+  
+  <Card title="Avoid paint invalidation" icon="ban">
+    Design animations to avoid changing painted content when possible.
+  </Card>
+  
+  <Card title="Profile with DevTools" icon="chart-column">
+    Use browser DevTools to identify layers, paint regions, and compositor activity.
+  </Card>
+  
+  <Card title="Batch DOM changes" icon="boxes-stacked">
+    Group multiple DOM updates to trigger a single paint/composite cycle.
+  </Card>
+  
+  <Card title="Debounce expensive operations" icon="clock">
+    Throttle operations that cause excessive layer updates or repaints.
+  </Card>
+</CardGroup>
+
+<Info>
+**Measurement is key:** Use `requestAnimationFrame` timestamps and Performance API to measure paint and composite timing in production.
+</Info>
+
+## Implementation checklist
+
+When building paint and composite systems:
+
+<Steps>
+  <Step title="Layer tree construction">
+    Implement logic to identify elements requiring layers and build the layer tree hierarchy.
+  </Step>
+  
+  <Step title="Display list recording">
+    Create a display list format and record paint operations for each layer.
+  </Step>
+  
+  <Step title="Rasterization engine">
+    Choose a rasterization strategy (software, GPU, or hybrid) and implement tile-based rasterization.
+  </Step>
+  
+  <Step title="GPU compositing">
+    Build a compositor that combines layer textures using GPU acceleration.
+  </Step>
+  
+  <Step title="Invalidation tracking">
+    Implement efficient invalidation to minimize unnecessary repainting and reuploading.
+  </Step>
+  
+  <Step title="Texture management">
+    Create a texture cache with eviction policies to manage GPU memory.
+  </Step>
+  
+  <Step title="Performance measurement">
+    Instrument each phase (layer tree, paint, raster, composite) to measure timing and identify bottlenecks.
+  </Step>
+</Steps>
+
+<Info>
+**Project checkpoint:** Build a complete paint and composite pipeline in your browser engine (C++ or Rust). Implement layer tree construction, paint recording, rasterization (CPU or GPU), and GPU compositing. Render complex websites like Wikipedia with images, CSS animations, and fonts. Measure every phase and optimize for 60fps scrolling and animations.
+</Info>

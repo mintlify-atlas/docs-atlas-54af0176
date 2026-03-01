@@ -1,0 +1,124 @@
+---
+title: CPU architecture
+description: Learn the fundamentals of CPU operation including fetch-decode-execute cycles, registers, instructions, branching, and pipeline optimization
+---
+
+## CPU execution cycle
+
+The CPU operates through a fundamental four-stage cycle that processes every instruction:
+
+<Steps>
+  <Step title="Fetch">
+    The CPU retrieves the next instruction from memory using the program counter (PC). The instruction is loaded from the memory address pointed to by the PC into the instruction register.
+  </Step>
+  
+  <Step title="Decode">
+    The control unit interprets the instruction, determining what operation needs to be performed and which registers or memory locations are involved.
+  </Step>
+  
+  <Step title="Execute">
+    The arithmetic logic unit (ALU) or other functional units perform the actual operation specified by the instruction, such as arithmetic, logic, or memory operations.
+  </Step>
+  
+  <Step title="Writeback">
+    The results of the execution are written back to the destination register or memory location, completing the instruction cycle.
+  </Step>
+</Steps>
+
+<Info>
+Modern CPUs can execute multiple instructions simultaneously through pipelining, where different stages of different instructions overlap in time.
+</Info>
+
+## Registers and instructions
+
+Registers are small, high-speed storage locations built directly into the CPU. They form the fastest level of the memory hierarchy.
+
+### Register usage
+
+Registers serve different purposes in instruction execution:
+
+- **General-purpose registers** - Store operands and results of arithmetic/logic operations
+- **Program counter (PC)** - Holds the address of the next instruction to execute
+- **Stack pointer (SP)** - Points to the top of the current stack frame
+- **Instruction register (IR)** - Holds the current instruction being executed
+- **Status/flags register** - Contains condition codes (zero, carry, overflow, etc.)
+
+### Instruction scheduling
+
+Simple instruction scheduling optimizes CPU utilization by:
+
+1. **Reordering instructions** to avoid data dependencies
+2. **Interleaving independent operations** to maximize throughput
+3. **Minimizing pipeline stalls** by scheduling instructions strategically
+
+<Tabs>
+  <Tab title="Unoptimized">
+    ```asm
+    LOAD R1, [addr1]    # Fetch from memory (slow)
+    ADD R2, R1, 5       # Must wait for R1 (stall)
+    STORE [addr2], R2   # Dependent on ADD result
+    ```
+  </Tab>
+  
+  <Tab title="Optimized">
+    ```asm
+    LOAD R1, [addr1]    # Fetch from memory (slow)
+    LOAD R3, [addr3]    # Independent load (can execute)
+    ADD R2, R1, 5       # R1 now available
+    ADD R4, R3, 10      # Independent operation
+    STORE [addr2], R2   # Store results
+    STORE [addr4], R4
+    ```
+  </Tab>
+</Tabs>
+
+## Branching and pipelines
+
+Branching introduces complexity in pipelined CPU architectures because the next instruction to fetch depends on the branch outcome.
+
+### Branch prediction
+
+Modern CPUs use sophisticated prediction algorithms to guess which way a branch will go:
+
+- **Static prediction** - Always predict taken or not taken
+- **Dynamic prediction** - Use branch history to make predictions
+- **Two-level adaptive prediction** - Track patterns of branch behavior
+
+<Warning>
+Mispredicted branches cause pipeline flushes, wasting all work done on speculatively executed instructions. This can significantly impact performance in code with unpredictable branching patterns.
+</Warning>
+
+### Avoiding pipeline stalls
+
+Strategies to minimize pipeline stalls:
+
+<CardGroup cols={2}>
+  <Card title="Branch delay slots" icon="clock">
+    Place independent instructions immediately after branches to fill execution gaps
+  </Card>
+  
+  <Card title="Predication" icon="code-branch">
+    Convert branches to conditional execution, allowing both paths to be computed
+  </Card>
+  
+  <Card title="Loop unrolling" icon="repeat">
+    Reduce branch frequency by executing multiple loop iterations per cycle
+  </Card>
+  
+  <Card title="Speculative execution" icon="forward">
+    Execute instructions from predicted path while waiting for branch resolution
+  </Card>
+</CardGroup>
+
+## Performance implications
+
+Understanding CPU architecture enables low-level optimization:
+
+- **Minimize data dependencies** between consecutive instructions
+- **Write branch-predictable code** with consistent patterns
+- **Leverage instruction-level parallelism** through independent operations
+- **Avoid unnecessary memory operations** by maximizing register usage
+
+<Tip>
+Profile your code to identify pipeline stalls and branch mispredictions using performance counters available through tools like `perf` on Linux or Instruments on macOS.
+</Tip>

@@ -1,0 +1,662 @@
+---
+title: Next.js architecture
+description: Explore Next.js core architectural patterns including file-based routing, Static Site Generation with getStaticProps, Incremental Static Regeneration, API routes, and module bundling strategies.
+---
+
+## Overview
+
+Next.js is a React framework that provides a complete architecture for building production-ready applications. It combines server-side rendering, static generation, API routes, and optimized bundling into a cohesive system built on React.
+
+<Info>
+Next.js abstracts complex infrastructure decisions while remaining flexible enough to optimize for different use cases through its hybrid rendering model.
+</Info>
+
+## File-based routing
+
+Next.js implements routing through the file system structure, eliminating the need for explicit route configuration.
+
+### How it works
+
+The `pages` directory (or `app` directory in Next.js 13+) maps directly to routes in your application.
+
+<CodeGroup>
+```bash Pages directory structure
+pages/
+├── index.js                  → /
+├── about.js                  → /about
+├── blog/
+│   ├── index.js              → /blog
+│   ├── [slug].js             → /blog/:slug
+│   └── [year]/[month].js     → /blog/:year/:month
+├── products/
+│   └── [...categories].js    → /products/* (catch-all)
+└── api/
+    └── users.js              → /api/users
+```
+</CodeGroup>
+
+### Dynamic routes
+
+Files with bracket notation create dynamic route segments.
+
+<Tabs>
+  <Tab title="Single parameter">
+    ```jsx pages/blog/[slug].js
+    import { useRouter } from 'next/router';
+
+    export default function BlogPost() {
+      const router = useRouter();
+      const { slug } = router.query;
+
+      return <article>Post: {slug}</article>;
+    }
+
+    // Matches: /blog/hello-world, /blog/nextjs-routing
+    ```
+  </Tab>
+
+  <Tab title="Multiple parameters">
+    ```jsx pages/blog/[year]/[month].js
+    import { useRouter } from 'next/router';
+
+    export default function ArchivePage() {
+      const router = useRouter();
+      const { year, month } = router.query;
+
+      return <div>Archive: {year}/{month}</div>;
+    }
+
+    // Matches: /blog/2024/03, /blog/2023/12
+    ```
+  </Tab>
+
+  <Tab title="Catch-all routes">
+    ```jsx pages/products/[...categories].js
+    import { useRouter } from 'next/router';
+
+    export default function ProductPage() {
+      const router = useRouter();
+      const { categories } = router.query;
+      // categories is an array: ['electronics', 'phones', 'iphone']
+
+      return <div>Categories: {categories.join(' / ')}</div>;
+    }
+
+    // Matches: /products/electronics
+    // Matches: /products/electronics/phones
+    // Matches: /products/electronics/phones/iphone
+    ```
+  </Tab>
+</Tabs>
+
+### Implementation details
+
+<Steps>
+  <Step title="File system scanning">
+    During build time, Next.js scans the `pages` directory and automatically generates route manifests based on file names and directory structure.
+  </Step>
+
+  <Step title="Route matching">
+    Incoming requests are matched against the route manifest using a priority system:
+    1. Exact static paths (`/about`)
+    2. Dynamic routes (`/blog/[slug]`)
+    3. Catch-all routes (`/products/[...categories]`)
+  </Step>
+
+  <Step title="Component loading">
+    Matched routes load their corresponding page component. Next.js automatically code-splits each route, loading only the JavaScript needed for that page.
+  </Step>
+</Steps>
+
+<Info>
+**Performance benefit**: File-based routing enables automatic code splitting, ensuring users only download the code for routes they visit.
+</Info>
+
+## Static Site Generation (SSG)
+
+SSG pre-renders pages at build time, generating static HTML that can be served instantly from a CDN.
+
+### getStaticProps
+
+The `getStaticProps` function runs at build time to fetch data and pass it as props to your page component.
+
+<CodeGroup>
+```jsx pages/blog/index.js
+export default function BlogIndex({ posts }) {
+  return (
+    <div>
+      <h1>Blog Posts</h1>
+      {posts.map(post => (
+        <article key={post.id}>
+          <h2>{post.title}</h2>
+          <p>{post.excerpt}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+export async function getStaticProps() {
+  // This runs at BUILD TIME only
+  const res = await fetch('https://api.example.com/posts');
+  const posts = await res.json();
+
+  return {
+    props: {
+      posts,
+    },
+  };
+}
+```
+</CodeGroup>
+
+### Build-time execution
+
+Understanding when and where `getStaticProps` executes is crucial for proper implementation.
+
+<AccordionGroup>
+  <Accordion title="Execution environment">
+    `getStaticProps` runs in a Node.js environment during the build process, never in the browser.
+
+    ```jsx
+    export async function getStaticProps() {
+      // ✅ Safe: Direct database access
+      const data = await db.query('SELECT * FROM posts');
+
+      // ✅ Safe: File system operations
+      const content = await fs.readFile('./content.md', 'utf-8');
+
+      // ✅ Safe: Environment variables (not exposed to client)
+      const apiKey = process.env.SECRET_API_KEY;
+
+      return { props: { data } };
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Build process">
+    <Steps>
+      <Step title="Data fetching">
+        Next.js executes `getStaticProps` for each static page during `next build`.
+      </Step>
+
+      <Step title="Page rendering">
+        The returned props are passed to the page component, which renders to static HTML.
+      </Step>
+
+      <Step title="HTML generation">
+        The rendered HTML and JSON data are written to disk in the `.next` directory.
+      </Step>
+
+      <Step title="Deployment">
+        Static HTML files are deployed to CDN, ready to serve instantly on request.
+      </Step>
+    </Steps>
+  </Accordion>
+
+  <Accordion title="Dynamic routes with SSG">
+    For dynamic routes, combine `getStaticProps` with `getStaticPaths` to specify which paths to pre-render.
+
+    ```jsx pages/blog/[slug].js
+    export async function getStaticPaths() {
+      // Determine which paths to pre-render
+      const posts = await fetchAllPosts();
+
+      const paths = posts.map(post => ({
+        params: { slug: post.slug },
+      }));
+
+      return {
+        paths,
+        fallback: false, // 404 for non-pre-rendered paths
+      };
+    }
+
+    export async function getStaticProps({ params }) {
+      const post = await fetchPost(params.slug);
+
+      return {
+        props: { post },
+      };
+    }
+
+    export default function BlogPost({ post }) {
+      return <article>{post.content}</article>;
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### When to use SSG
+
+<CardGroup cols={2}>
+  <Card title="Marketing pages" icon="bullhorn">
+    Landing pages, about pages, and marketing content that rarely changes benefit from instant CDN delivery.
+  </Card>
+
+  <Card title="Blog posts" icon="newspaper">
+    Content-focused sites where posts are written once and served many times.
+  </Card>
+
+  <Card title="Documentation" icon="book">
+    Technical documentation that updates infrequently but needs to be fast and SEO-friendly.
+  </Card>
+
+  <Card title="E-commerce listings" icon="store">
+    Product pages with relatively stable content (combine with ISR for updates).
+  </Card>
+</CardGroup>
+
+## Incremental Static Regeneration (ISR)
+
+ISR enables updating static pages after build time without rebuilding the entire site, combining the performance of SSG with the freshness of SSR.
+
+### Revalidation mechanism
+
+Add a `revalidate` property to `getStaticProps` to specify how often Next.js should regenerate the page.
+
+<CodeGroup>
+```jsx pages/products/[id].js
+export async function getStaticProps({ params }) {
+  const product = await fetchProduct(params.id);
+
+  return {
+    props: { product },
+    revalidate: 60, // Regenerate page at most once every 60 seconds
+  };
+}
+
+export default function ProductPage({ product }) {
+  return (
+    <div>
+      <h1>{product.name}</h1>
+      <p>Price: ${product.price}</p>
+      <p>In stock: {product.inventory}</p>
+    </div>
+  );
+}
+```
+</CodeGroup>
+
+### Stale-while-revalidate strategy
+
+ISR implements a stale-while-revalidate caching pattern that balances freshness and performance.
+
+<Steps>
+  <Step title="First request (cache hit)">
+    User requests a page. Next.js serves the cached static HTML instantly from CDN. The page may be stale, but the user sees content immediately.
+  </Step>
+
+  <Step title="Background regeneration">
+    If the page is older than the revalidation time, Next.js triggers a background regeneration.
+    - Fetches fresh data by executing `getStaticProps`
+    - Renders new HTML with updated data
+    - Does NOT block the current request
+  </Step>
+
+  <Step title="Cache update">
+    Once regeneration completes, Next.js replaces the cached page with the new version. The original user still received the stale page instantly.
+  </Step>
+
+  <Step title="Subsequent requests">
+    Future users receive the freshly regenerated page until the next revalidation window.
+  </Step>
+</Steps>
+
+<Tabs>
+  <Tab title="Timeline example">
+    ```plaintext
+    Build time:    Page generated with product price: $99
+    t=0s:          User A requests page → Serves cached $99 (instant)
+    t=65s:         User B requests page → Serves cached $99 (instant)
+                   → Triggers background regeneration (price now $89)
+    t=70s:         Regeneration completes, cache updated to $89
+    t=80s:         User C requests page → Serves fresh $89 (instant)
+    ```
+  </Tab>
+
+  <Tab title="Revalidation flow">
+    ```jsx
+    // Page built at 10:00 AM with revalidate: 3600 (1 hour)
+
+    // 10:30 AM - Request 1
+    // ✅ Serves cached version (< 1 hour old)
+    // ❌ No regeneration triggered
+
+    // 11:30 AM - Request 2
+    // ✅ Serves cached version (instant response)
+    // ✅ Triggers background regeneration (> 1 hour old)
+
+    // 11:30:05 AM - Regeneration completes
+    // New version cached, old version replaced
+
+    // 11:45 AM - Request 3
+    // ✅ Serves newly regenerated version
+    // ❌ No regeneration (< 1 hour since last regen)
+    ```
+  </Tab>
+</Tabs>
+
+<Info>
+**Key insight**: ISR guarantees users always get fast responses (serving stale content) while ensuring content stays reasonably fresh through background updates.
+</Info>
+
+### On-demand revalidation
+
+Trigger revalidation programmatically when you know content has changed, without waiting for the time-based window.
+
+<CodeGroup>
+```jsx pages/api/revalidate.js
+export default async function handler(req, res) {
+  // Verify request is authorized
+  if (req.headers.authorization !== `Bearer ${process.env.REVALIDATE_TOKEN}`) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  try {
+    // Revalidate specific path
+    await res.revalidate('/products/123');
+    return res.json({ revalidated: true });
+  } catch (err) {
+    return res.status(500).send('Error revalidating');
+  }
+}
+```
+
+```bash Webhook example
+# CMS webhook calls this when content changes
+curl -X POST https://yoursite.com/api/revalidate \
+  -H "Authorization: Bearer SECRET_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"path": "/blog/new-post"}'
+```
+</CodeGroup>
+
+## API routes
+
+API routes provide a serverless backend solution within your Next.js application, running as serverless functions.
+
+### Creating API endpoints
+
+Files in `pages/api` become API endpoints instead of pages.
+
+<CodeGroup>
+```jsx pages/api/users.js
+// GET /api/users
+export default async function handler(req, res) {
+  if (req.method === 'GET') {
+    const users = await db.query('SELECT * FROM users');
+    res.status(200).json({ users });
+  } else if (req.method === 'POST') {
+    const user = await db.insert('users', req.body);
+    res.status(201).json({ user });
+  } else {
+    res.status(405).json({ error: 'Method not allowed' });
+  }
+}
+```
+
+```jsx pages/api/posts/[id].js
+// Dynamic API route: /api/posts/123
+export default async function handler(req, res) {
+  const { id } = req.query;
+
+  switch (req.method) {
+    case 'GET':
+      const post = await db.findById('posts', id);
+      return res.status(200).json({ post });
+
+    case 'PUT':
+      const updated = await db.update('posts', id, req.body);
+      return res.status(200).json({ post: updated });
+
+    case 'DELETE':
+      await db.delete('posts', id);
+      return res.status(204).end();
+
+    default:
+      return res.status(405).end();
+  }
+}
+```
+</CodeGroup>
+
+### Middleware and helpers
+
+Implement reusable logic for authentication, validation, and error handling.
+
+<Tabs>
+  <Tab title="Authentication">
+    ```jsx lib/auth.js
+    export function withAuth(handler) {
+      return async (req, res) => {
+        const token = req.headers.authorization?.split(' ')[1];
+
+        if (!token) {
+          return res.status(401).json({ error: 'No token provided' });
+        }
+
+        try {
+          const user = await verifyToken(token);
+          req.user = user;
+          return handler(req, res);
+        } catch (error) {
+          return res.status(401).json({ error: 'Invalid token' });
+        }
+      };
+    }
+    ```
+
+    ```jsx pages/api/profile.js
+    import { withAuth } from '@/lib/auth';
+
+    async function handler(req, res) {
+      // req.user is populated by withAuth
+      const profile = await db.findUser(req.user.id);
+      res.status(200).json({ profile });
+    }
+
+    export default withAuth(handler);
+    ```
+  </Tab>
+
+  <Tab title="Error handling">
+    ```jsx lib/apiHandler.js
+    export function apiHandler(handler) {
+      return async (req, res) => {
+        try {
+          await handler(req, res);
+        } catch (error) {
+          console.error('API Error:', error);
+
+          if (error.name === 'ValidationError') {
+            return res.status(400).json({ error: error.message });
+          }
+
+          if (error.name === 'NotFoundError') {
+            return res.status(404).json({ error: 'Resource not found' });
+          }
+
+          res.status(500).json({ error: 'Internal server error' });
+        }
+      };
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Use cases
+
+<CardGroup cols={2}>
+  <Card title="Form submissions" icon="paper-plane">
+    Handle contact forms, newsletter signups, and user-generated content.
+  </Card>
+
+  <Card title="Webhooks" icon="webhook">
+    Receive and process webhooks from third-party services like Stripe or GitHub.
+  </Card>
+
+  <Card title="Proxy endpoints" icon="server">
+    Hide API keys by proxying requests to external services through your backend.
+  </Card>
+
+  <Card title="Data aggregation" icon="database">
+    Combine data from multiple sources before sending to the client.
+  </Card>
+</CardGroup>
+
+## Module bundling and code splitting
+
+Next.js automatically optimizes your JavaScript bundles for optimal loading performance.
+
+### Automatic code splitting
+
+Every page in the `pages` directory becomes its own JavaScript bundle.
+
+<CodeGroup>
+```jsx Example bundle output
+.next/static/chunks/
+├── pages/
+│   ├── index-[hash].js           // Only loaded for /
+│   ├── about-[hash].js           // Only loaded for /about
+│   └── blog/[slug]-[hash].js     // Only loaded for /blog/[slug]
+├── framework-[hash].js            // React framework code
+└── main-[hash].js                 // Next.js runtime
+```
+</CodeGroup>
+
+### Dynamic imports
+
+Manually code-split components that aren't needed immediately.
+
+<Tabs>
+  <Tab title="Client-side">
+    ```jsx
+    import dynamic from 'next/dynamic';
+
+    // Loaded only when rendered
+    const DynamicComponent = dynamic(() => import('../components/Heavy'));
+
+    // Loaded only when rendered, with loading state
+    const DynamicWithLoading = dynamic(
+      () => import('../components/Heavy'),
+      {
+        loading: () => <p>Loading...</p>,
+        ssr: false, // Disable SSR for this component
+      }
+    );
+
+    export default function Page() {
+      return (
+        <div>
+          <DynamicComponent />
+        </div>
+      );
+    }
+    ```
+  </Tab>
+
+  <Tab title="Named exports">
+    ```jsx
+    import dynamic from 'next/dynamic';
+
+    // Import specific named export
+    const SpecificComponent = dynamic(
+      () => import('../components/Library').then(mod => mod.SpecificExport)
+    );
+
+    export default function Page() {
+      return <SpecificComponent />;
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Shared dependencies
+
+Next.js automatically creates shared chunks for dependencies used across multiple pages.
+
+<Steps>
+  <Step title="Dependency analysis">
+    During build, Next.js analyzes which dependencies are imported by each page.
+  </Step>
+
+  <Step title="Chunk generation">
+    Dependencies used by multiple pages are extracted into shared chunks to avoid duplication.
+  </Step>
+
+  <Step title="Optimal loading">
+    When navigating between pages, only new chunks are downloaded. Shared dependencies are cached.
+  </Step>
+</Steps>
+
+<Info>
+Next.js uses webpack (or Turbopack in Next.js 13+) with carefully tuned configuration to balance chunk size, caching efficiency, and loading performance.
+</Info>
+
+### Bundle optimization techniques
+
+<AccordionGroup>
+  <Accordion title="Tree shaking">
+    Next.js removes unused exports from your dependencies, reducing bundle size.
+
+    ```jsx
+    // Only Button code is included in bundle
+    import { Button } from 'huge-library';
+    ```
+  </Accordion>
+
+  <Accordion title="Minification">
+    All JavaScript is minified in production builds using Terser, reducing file size by 40-60%.
+  </Accordion>
+
+  <Accordion title="Compression">
+    Static files are automatically compressed using gzip and brotli for faster transfer.
+  </Accordion>
+
+  <Accordion title="Image optimization">
+    The `next/image` component automatically optimizes images, serving modern formats (WebP, AVIF) and appropriate sizes.
+
+    ```jsx
+    import Image from 'next/image';
+
+    <Image
+      src="/photo.jpg"
+      width={800}
+      height={600}
+      alt="Photo"
+      // Automatically optimized and lazy loaded
+    />
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Architecture summary
+
+Next.js combines multiple rendering strategies and architectural patterns into a cohesive framework:
+
+<CardGroup cols={3}>
+  <Card title="File-based routing" icon="folder-tree">
+    Zero-config routing with automatic code splitting per page.
+  </Card>
+
+  <Card title="SSG with getStaticProps" icon="file-code">
+    Build-time rendering for maximum performance and SEO.
+  </Card>
+
+  <Card title="ISR" icon="rotate">
+    Static generation with background updates for fresh content.
+  </Card>
+
+  <Card title="API routes" icon="route">
+    Serverless backend functions co-located with frontend code.
+  </Card>
+
+  <Card title="Automatic bundling" icon="box">
+    Optimized code splitting and chunk generation.
+  </Card>
+
+  <Card title="Hybrid rendering" icon="shuffle">
+    Mix SSG, ISR, and SSR on a per-page basis.
+  </Card>
+</CardGroup>

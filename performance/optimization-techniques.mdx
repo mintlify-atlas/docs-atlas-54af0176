@@ -1,0 +1,851 @@
+---
+title: Optimization techniques
+description: Learn component memoization, virtualization, image/font optimization, bundle analysis, and code splitting strategies
+---
+
+## Overview
+
+Once you've identified performance bottlenecks using profiling tools, the next step is applying targeted optimization techniques. This guide covers the most impactful optimization strategies for modern web applications.
+
+<Info>
+Optimization should be data-driven. Always measure before and after to verify improvements and avoid premature optimization.
+</Info>
+
+## Component memoization strategies
+
+Memoization prevents unnecessary re-renders by caching component outputs and computation results.
+
+### React.memo
+
+Wraps functional components to prevent re-renders when props haven't changed.
+
+<Tabs>
+  <Tab title="Basic usage">
+    ```jsx
+    import { memo } from 'react';
+    
+    const ExpensiveComponent = memo(({ data, onSelect }) => {
+      console.log('Rendering ExpensiveComponent');
+      
+      return (
+        <div>
+          {data.map(item => (
+            <div key={item.id} onClick={() => onSelect(item)}>
+              {item.name}
+            </div>
+          ))}
+        </div>
+      );
+    });
+    ```
+    
+    Component only re-renders when `data` or `onSelect` changes.
+  </Tab>
+  
+  <Tab title="Custom comparison">
+    ```jsx
+    const ExpensiveComponent = memo(
+      ({ data, onSelect }) => {
+        return (
+          <div>
+            {data.map(item => (
+              <div key={item.id} onClick={() => onSelect(item)}>
+                {item.name}
+              </div>
+            ))}
+          </div>
+        );
+      },
+      (prevProps, nextProps) => {
+        // Return true if props are equal (skip render)
+        // Return false if props are different (re-render)
+        return (
+          prevProps.data.length === nextProps.data.length &&
+          prevProps.data.every((item, i) => item.id === nextProps.data[i].id)
+        );
+      }
+    );
+    ```
+    
+    Custom comparison function for complex prop equality checks.
+  </Tab>
+  
+  <Tab title="With callbacks">
+    ```jsx
+    import { memo, useCallback } from 'react';
+    
+    const ListItem = memo(({ item, onDelete }) => {
+      return (
+        <div>
+          {item.name}
+          <button onClick={() => onDelete(item.id)}>Delete</button>
+        </div>
+      );
+    });
+    
+    function ParentComponent({ items }) {
+      // Memoize callback to prevent ListItem re-renders
+      const handleDelete = useCallback((id) => {
+        // Delete logic
+      }, []);
+      
+      return (
+        <>
+          {items.map(item => (
+            <ListItem key={item.id} item={item} onDelete={handleDelete} />
+          ))}
+        </>
+      );
+    }
+    ```
+    
+    Combine `memo` with `useCallback` to prevent re-renders from function prop changes.
+  </Tab>
+</Tabs>
+
+### useMemo and useCallback
+
+<CodeGroup>
+```jsx useMemo
+import { useMemo } from 'react';
+
+function DataTable({ data, filters }) {
+  // Expensive computation memoized based on dependencies
+  const filteredData = useMemo(() => {
+    console.log('Filtering data...');
+    return data.filter(item => {
+      return Object.entries(filters).every(([key, value]) => {
+        return item[key] === value;
+      });
+    });
+  }, [data, filters]);
+  
+  const sortedData = useMemo(() => {
+    console.log('Sorting data...');
+    return [...filteredData].sort((a, b) => a.name.localeCompare(b.name));
+  }, [filteredData]);
+  
+  return (
+    <table>
+      {sortedData.map(item => (
+        <tr key={item.id}>
+          <td>{item.name}</td>
+        </tr>
+      ))}
+    </table>
+  );
+}
+```
+
+```jsx useCallback
+import { useCallback, useState } from 'react';
+
+function SearchForm({ onSearch }) {
+  const [query, setQuery] = useState('');
+  
+  // Memoize event handler to maintain reference equality
+  const handleChange = useCallback((e) => {
+    setQuery(e.target.value);
+  }, []);
+  
+  const handleSubmit = useCallback((e) => {
+    e.preventDefault();
+    onSearch(query);
+  }, [query, onSearch]);
+  
+  return (
+    <form onSubmit={handleSubmit}>
+      <input value={query} onChange={handleChange} />
+      <button type="submit">Search</button>
+    </form>
+  );
+}
+```
+
+```jsx Combined pattern
+import { memo, useMemo, useCallback } from 'react';
+
+const ProductCard = memo(({ product, onAddToCart }) => {
+  return (
+    <div>
+      <h3>{product.name}</h3>
+      <button onClick={() => onAddToCart(product)}>Add to Cart</button>
+    </div>
+  );
+});
+
+function ProductList({ products, cart, setCart }) {
+  // Memoize expensive computation
+  const sortedProducts = useMemo(() => {
+    return [...products].sort((a, b) => b.rating - a.rating);
+  }, [products]);
+  
+  // Memoize callback to prevent ProductCard re-renders
+  const handleAddToCart = useCallback((product) => {
+    setCart(prev => [...prev, product]);
+  }, [setCart]);
+  
+  return (
+    <div>
+      {sortedProducts.map(product => (
+        <ProductCard
+          key={product.id}
+          product={product}
+          onAddToCart={handleAddToCart}
+        />
+      ))}
+    </div>
+  );
+}
+```
+</CodeGroup>
+
+<Warning>
+Don't memoize everything. Memoization has overhead. Only memoize expensive computations or when preventing re-renders of child components.
+</Warning>
+
+## Virtualized lists and windowing
+
+Virtualization renders only visible items in large lists, dramatically improving performance.
+
+### Why virtualization matters
+
+<CardGroup cols={2}>
+  <Card title="Without virtualization" icon="xmark">
+    Rendering 10,000 items creates 10,000 DOM nodes, causing:
+    - Slow initial render
+    - High memory usage
+    - Sluggish scrolling
+    - Browser freezing
+  </Card>
+  
+  <Card title="With virtualization" icon="check">
+    Only renders ~20 visible items at a time:
+    - Fast initial render
+    - Low memory footprint
+    - Smooth 60fps scrolling
+    - Responsive UI
+  </Card>
+</CardGroup>
+
+### Using react-window
+
+<Tabs>
+  <Tab title="Fixed size list">
+    ```jsx
+    import { FixedSizeList } from 'react-window';
+    
+    function VirtualList({ items }) {
+      const Row = ({ index, style }) => (
+        <div style={style}>
+          {items[index].name}
+        </div>
+      );
+      
+      return (
+        <FixedSizeList
+          height={600}
+          itemCount={items.length}
+          itemSize={50}
+          width="100%"
+        >
+          {Row}
+        </FixedSizeList>
+      );
+    }
+    ```
+    
+    Best for lists with uniform item heights.
+  </Tab>
+  
+  <Tab title="Variable size list">
+    ```jsx
+    import { VariableSizeList } from 'react-window';
+    
+    function VirtualList({ items }) {
+      const getItemSize = (index) => {
+        // Calculate height based on content
+        return items[index].content.length > 100 ? 100 : 50;
+      };
+      
+      const Row = ({ index, style }) => (
+        <div style={style}>
+          <h3>{items[index].title}</h3>
+          <p>{items[index].content}</p>
+        </div>
+      );
+      
+      return (
+        <VariableSizeList
+          height={600}
+          itemCount={items.length}
+          itemSize={getItemSize}
+          width="100%"
+        >
+          {Row}
+        </VariableSizeList>
+      );
+    }
+    ```
+    
+    Best for lists with varying item heights.
+  </Tab>
+  
+  <Tab title="Grid">
+    ```jsx
+    import { FixedSizeGrid } from 'react-window';
+    
+    function VirtualGrid({ items, columnCount }) {
+      const Cell = ({ columnIndex, rowIndex, style }) => {
+        const index = rowIndex * columnCount + columnIndex;
+        const item = items[index];
+        
+        if (!item) return null;
+        
+        return (
+          <div style={style}>
+            <img src={item.thumbnail} alt={item.name} />
+            <p>{item.name}</p>
+          </div>
+        );
+      };
+      
+      return (
+        <FixedSizeGrid
+          columnCount={columnCount}
+          columnWidth={200}
+          height={600}
+          rowCount={Math.ceil(items.length / columnCount)}
+          rowHeight={200}
+          width={1000}
+        >
+          {Cell}
+        </FixedSizeGrid>
+      );
+    }
+    ```
+    
+    Best for grid layouts like image galleries.
+  </Tab>
+</Tabs>
+
+<Tip>
+Use `react-window` for most cases. For more advanced features like dynamic loading and sticky headers, consider `react-virtualized`.
+</Tip>
+
+## Image optimization
+
+Images are often the largest assets on web pages. Proper optimization is crucial for performance.
+
+### Image formats
+
+<AccordionGroup>
+  <Accordion title="WebP - Modern format">
+    Superior compression with excellent quality. Supported in all modern browsers.
+    
+    ```html
+    <picture>
+      <source srcset="image.webp" type="image/webp" />
+      <source srcset="image.jpg" type="image/jpeg" />
+      <img src="image.jpg" alt="Description" />
+    </picture>
+    ```
+    
+    **Benefits:** 25-35% smaller than JPEG, supports transparency and animation.
+  </Accordion>
+  
+  <Accordion title="AVIF - Next-gen format">
+    Even better compression than WebP, but limited browser support.
+    
+    ```html
+    <picture>
+      <source srcset="image.avif" type="image/avif" />
+      <source srcset="image.webp" type="image/webp" />
+      <img src="image.jpg" alt="Description" />
+    </picture>
+    ```
+    
+    **Benefits:** Up to 50% smaller than JPEG with better quality.
+  </Accordion>
+  
+  <Accordion title="SVG - Vector graphics">
+    Perfect for icons, logos, and illustrations that need to scale.
+    
+    ```jsx
+    // Inline SVG for maximum control
+    <svg width="24" height="24" viewBox="0 0 24 24">
+      <path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5z" />
+    </svg>
+    
+    // External SVG
+    <img src="icon.svg" alt="Icon" />
+    ```
+    
+    **Benefits:** Infinitely scalable, small file size, CSS/JS controllable.
+  </Accordion>
+</AccordionGroup>
+
+### Lazy loading
+
+<CodeGroup>
+```html Native lazy loading
+<!-- Browser handles lazy loading automatically -->
+<img src="large-image.jpg" alt="Description" loading="lazy" />
+
+<!-- Eager loading for above-the-fold images -->
+<img src="hero.jpg" alt="Hero" loading="eager" />
+```
+
+```jsx React lazy loading
+import { useState, useEffect, useRef } from 'react';
+
+function LazyImage({ src, alt, placeholder }) {
+  const [imageSrc, setImageSrc] = useState(placeholder);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const imageRef = useRef();
+  
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            setImageSrc(src);
+            observer.disconnect();
+          }
+        });
+      },
+      { rootMargin: '50px' }
+    );
+    
+    if (imageRef.current) {
+      observer.observe(imageRef.current);
+    }
+    
+    return () => observer.disconnect();
+  }, [src]);
+  
+  return (
+    <img
+      ref={imageRef}
+      src={imageSrc}
+      alt={alt}
+      onLoad={() => setImageLoaded(true)}
+      style={{ opacity: imageLoaded ? 1 : 0.5 }}
+    />
+  );
+}
+```
+
+```jsx Next.js Image
+import Image from 'next/image';
+
+// Automatic optimization, lazy loading, and responsive images
+function Gallery({ images }) {
+  return (
+    <div>
+      {images.map(image => (
+        <Image
+          key={image.id}
+          src={image.url}
+          alt={image.alt}
+          width={800}
+          height={600}
+          placeholder="blur"
+          blurDataURL={image.placeholder}
+        />
+      ))}
+    </div>
+  );
+}
+```
+</CodeGroup>
+
+### Responsive images
+
+```html
+<!-- Different images for different screen sizes -->
+<picture>
+  <source
+    media="(min-width: 1200px)"
+    srcset="image-large.jpg 1x, image-large@2x.jpg 2x"
+  />
+  <source
+    media="(min-width: 768px)"
+    srcset="image-medium.jpg 1x, image-medium@2x.jpg 2x"
+  />
+  <img
+    src="image-small.jpg"
+    srcset="image-small.jpg 1x, image-small@2x.jpg 2x"
+    alt="Responsive image"
+  />
+</picture>
+
+<!-- Size-based selection -->
+<img
+  src="image-800.jpg"
+  srcset="
+    image-400.jpg 400w,
+    image-800.jpg 800w,
+    image-1200.jpg 1200w
+  "
+  sizes="(max-width: 600px) 400px, (max-width: 1000px) 800px, 1200px"
+  alt="Auto-sized image"
+/>
+```
+
+## Font optimization
+
+Web fonts can significantly impact page load performance if not optimized properly.
+
+### Subsetting
+
+Reduce font file size by including only needed characters.
+
+```bash
+# Using pyftsubset from fonttools
+pip install fonttools brotli
+
+# Create subset with only Latin characters
+pyftsubset font.ttf \
+  --output-file=font-subset.woff2 \
+  --flavor=woff2 \
+  --layout-features="*" \
+  --unicodes=U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD
+```
+
+### Preloading fonts
+
+<Tabs>
+  <Tab title="Critical fonts">
+    ```html
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <!-- Preload critical fonts -->
+        <link
+          rel="preload"
+          href="/fonts/main-font.woff2"
+          as="font"
+          type="font/woff2"
+          crossorigin
+        />
+        
+        <style>
+          @font-face {
+            font-family: 'MainFont';
+            src: url('/fonts/main-font.woff2') format('woff2');
+            font-weight: 400;
+            font-display: swap;
+          }
+        </style>
+      </head>
+    </html>
+    ```
+  </Tab>
+  
+  <Tab title="Next.js fonts">
+    ```jsx
+    import { Inter, Roboto_Mono } from 'next/font/google';
+    
+    const inter = Inter({
+      subsets: ['latin'],
+      display: 'swap',
+      variable: '--font-inter',
+    });
+    
+    const robotoMono = Roboto_Mono({
+      subsets: ['latin'],
+      display: 'swap',
+      variable: '--font-roboto-mono',
+    });
+    
+    export default function RootLayout({ children }) {
+      return (
+        <html className={`${inter.variable} ${robotoMono.variable}`}>
+          <body>{children}</body>
+        </html>
+      );
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Font display strategies
+
+<CardGroup cols={2}>
+  <Card title="font-display: swap">
+    Show fallback font immediately, swap when custom font loads.
+    
+    **Best for:** Most use cases. Avoids invisible text.
+  </Card>
+  
+  <Card title="font-display: optional">
+    Use custom font only if already cached, otherwise use fallback.
+    
+    **Best for:** Performance-critical pages where font is not essential.
+  </Card>
+  
+  <Card title="font-display: fallback">
+    Brief block period, then show fallback, swap if font loads quickly.
+    
+    **Best for:** Balance between swap and optional.
+  </Card>
+  
+  <Card title="font-display: block">
+    Wait for font to load before showing text (up to 3s).
+    
+    **Best for:** When font is critical to design (use sparingly).
+  </Card>
+</CardGroup>
+
+## Bundle analysis and tree shaking
+
+Analyze and optimize your JavaScript bundles to reduce load times.
+
+### Analyzing bundles
+
+<Steps>
+  <Step title="Install analyzer">
+    ```bash
+    npm install --save-dev webpack-bundle-analyzer
+    ```
+  </Step>
+  
+  <Step title="Configure webpack">
+    ```javascript
+    const BundleAnalyzerPlugin = require('webpack-bundle-analyzer').BundleAnalyzerPlugin;
+    
+    module.exports = {
+      plugins: [
+        new BundleAnalyzerPlugin({
+          analyzerMode: 'static',
+          openAnalyzer: false,
+          reportFilename: 'bundle-report.html'
+        })
+      ]
+    };
+    ```
+  </Step>
+  
+  <Step title="Run build">
+    ```bash
+    npm run build
+    ```
+    
+    Open `bundle-report.html` to visualize your bundle composition.
+  </Step>
+  
+  <Step title="Identify issues">
+    Look for:
+    - Large dependencies that can be replaced
+    - Duplicate modules
+    - Unused code
+    - Opportunity for code splitting
+  </Step>
+</Steps>
+
+### Tree shaking
+
+Eliminate unused code from bundles.
+
+<CodeGroup>
+```javascript Bad - Imports entire library
+import _ from 'lodash';
+
+const result = _.debounce(fn, 300);
+```
+
+```javascript Good - Import only what you need
+import debounce from 'lodash/debounce';
+
+const result = debounce(fn, 300);
+```
+
+```javascript Better - Use tree-shakeable alternative
+import { debounce } from 'lodash-es';
+
+const result = debounce(fn, 300);
+```
+</CodeGroup>
+
+<Warning>
+Tree shaking only works with ES modules (`import`/`export`). CommonJS modules (`require`/`module.exports`) cannot be tree-shaken.
+</Warning>
+
+## Code splitting strategies
+
+Split your code into smaller chunks to reduce initial load time.
+
+### Route-based splitting
+
+<Tabs>
+  <Tab title="React Router">
+    ```jsx
+    import { lazy, Suspense } from 'react';
+    import { BrowserRouter, Routes, Route } from 'react-router-dom';
+    
+    // Lazy load route components
+    const Home = lazy(() => import('./pages/Home'));
+    const Dashboard = lazy(() => import('./pages/Dashboard'));
+    const Settings = lazy(() => import('./pages/Settings'));
+    
+    function App() {
+      return (
+        <BrowserRouter>
+          <Suspense fallback={<div>Loading...</div>}>
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/settings" element={<Settings />} />
+            </Routes>
+          </Suspense>
+        </BrowserRouter>
+      );
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Next.js">
+    ```jsx
+    // app/dashboard/page.js
+    import dynamic from 'next/dynamic';
+    
+    // Automatically code-split by route
+    export default function Dashboard() {
+      return <div>Dashboard</div>;
+    }
+    
+    // Manual dynamic import for components
+    const DynamicChart = dynamic(() => import('../components/Chart'), {
+      loading: () => <p>Loading chart...</p>,
+      ssr: false // Disable SSR for this component
+    });
+    
+    export default function Analytics() {
+      return (
+        <div>
+          <h1>Analytics</h1>
+          <DynamicChart />
+        </div>
+      );
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Component-based splitting
+
+```jsx
+import { lazy, Suspense, useState } from 'react';
+
+// Heavy components loaded only when needed
+const VideoPlayer = lazy(() => import('./VideoPlayer'));
+const RichTextEditor = lazy(() => import('./RichTextEditor'));
+const DataVisualization = lazy(() => import('./DataVisualization'));
+
+function ContentPage() {
+  const [activeTab, setActiveTab] = useState('video');
+  
+  return (
+    <div>
+      <Tabs value={activeTab} onChange={setActiveTab}>
+        <Tab value="video">Video</Tab>
+        <Tab value="editor">Editor</Tab>
+        <Tab value="charts">Charts</Tab>
+      </Tabs>
+      
+      <Suspense fallback={<Spinner />}>
+        {activeTab === 'video' && <VideoPlayer />}
+        {activeTab === 'editor' && <RichTextEditor />}
+        {activeTab === 'charts' && <DataVisualization />}
+      </Suspense>
+    </div>
+  );
+}
+```
+
+### Vendor splitting
+
+```javascript
+// webpack.config.js
+module.exports = {
+  optimization: {
+    splitChunks: {
+      cacheGroups: {
+        // Separate vendor bundle
+        vendor: {
+          test: /[\\/]node_modules[\\/]/,
+          name: 'vendors',
+          chunks: 'all',
+          priority: 10
+        },
+        // Separate common code
+        common: {
+          minChunks: 2,
+          name: 'common',
+          chunks: 'all',
+          priority: 5,
+          reuseExistingChunk: true
+        },
+        // Separate React libraries
+        react: {
+          test: /[\\/]node_modules[\\/](react|react-dom)[\\/]/,
+          name: 'react',
+          chunks: 'all',
+          priority: 20
+        }
+      }
+    }
+  }
+};
+```
+
+<Tip>
+Aim for chunk sizes between 20-200KB. Too many small chunks increase HTTP overhead, while large chunks defeat the purpose of splitting.
+</Tip>
+
+## Performance optimization checklist
+
+<Steps>
+  <Step title="Measure baseline">
+    - Run Lighthouse audit
+    - Profile with Chrome DevTools
+    - Record Core Web Vitals
+  </Step>
+  
+  <Step title="Optimize rendering">
+    - Memoize expensive components
+    - Virtualize long lists
+    - Avoid layout thrashing
+  </Step>
+  
+  <Step title="Optimize assets">
+    - Convert images to WebP/AVIF
+    - Implement lazy loading
+    - Subset and preload fonts
+  </Step>
+  
+  <Step title="Optimize bundles">
+    - Analyze bundle composition
+    - Enable tree shaking
+    - Implement code splitting
+  </Step>
+  
+  <Step title="Verify improvements">
+    - Re-run Lighthouse
+    - Compare metrics
+    - Monitor real user metrics
+  </Step>
+</Steps>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Profiling tools" icon="magnifying-glass-chart" href="/performance/profiling-tools">
+    Learn to identify performance bottlenecks using Chrome DevTools and React Profiler
+  </Card>
+  
+  <Card title="Critical rendering path" icon="route" href="/performance/critical-rendering-path">
+    Optimize initial page load by eliminating render-blocking resources
+  </Card>
+</CardGroup>

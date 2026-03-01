@@ -1,0 +1,181 @@
+---
+title: Engine debugging
+description: Build and modify JavaScript engines and browsers from source, add custom instrumentation, and profile internal behavior
+---
+
+Learn how to build, modify, and debug JavaScript engines and browser engines from source. This module covers adding custom bytecode instructions, instrumenting garbage collection, and building Chromium/WebKit with custom tracing.
+
+## JavaScript engine hacking
+
+Modify V8 to add custom instrumentation and understand internal behavior at the deepest level.
+
+<Steps>
+  <Step title="Build V8 from source with custom patches">
+    Clone the V8 repository and set up the build environment. Apply custom patches to modify engine behavior and add instrumentation points.
+    
+    ```bash
+    # Clone depot_tools and V8
+    git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+    export PATH=$PATH:/path/to/depot_tools
+    fetch v8
+    cd v8
+    
+    # Build with debug symbols
+    gn gen out/Debug --args='is_debug=true v8_enable_backtrace=true'
+    ninja -C out/Debug
+    ```
+    
+    <Info>
+      Building V8 from source requires significant disk space (20GB+) and time (30+ minutes on modern hardware).
+    </Info>
+  </Step>
+  
+  <Step title="Add custom bytecode instructions">
+    Extend the bytecode instruction set to add custom operations. Modify the interpreter to handle new instructions and update the bytecode generator.
+    
+    Key files to modify:
+    - `src/interpreter/bytecodes.h` - Define new bytecode opcodes
+    - `src/interpreter/interpreter-generator.cc` - Implement bytecode handlers
+    - `src/interpreter/bytecode-generator.cc` - Generate new bytecodes
+    
+    <Warning>
+      Custom bytecode instructions require careful coordination between the parser, bytecode generator, and interpreter. Incorrect implementation can cause crashes or undefined behavior.
+    </Warning>
+  </Step>
+  
+  <Step title="Instrument GC for detailed metrics">
+    Add custom logging and metrics collection to the garbage collector to understand allocation patterns, pause times, and memory pressure.
+    
+    ```cpp
+    // Example: Add custom GC logging
+    void Heap::PerformGarbageCollection(GarbageCollector collector) {
+      double start_time = MonotonicallyIncreasingTime();
+      size_t bytes_before = SizeOfObjects();
+      
+      // Perform collection
+      PerformGarbageCollectionInternal(collector);
+      
+      double duration = MonotonicallyIncreasingTime() - start_time;
+      size_t bytes_freed = bytes_before - SizeOfObjects();
+      
+      LOG(INFO) << "GC: " << collector << " freed " << bytes_freed 
+                << " bytes in " << duration << "ms";
+    }
+    ```
+  </Step>
+  
+  <Step title="Profile JIT compilation decisions">
+    Track which functions get optimized, when optimization happens, and why deoptimization occurs.
+    
+    Add tracing to TurboFan optimization pipeline:
+    - Track optimization candidates
+    - Log type feedback and inline caching hits
+    - Monitor deoptimization reasons
+    - Measure compilation time vs execution speedup
+  </Step>
+</Steps>
+
+<Note>
+  Understanding engine internals requires familiarity with C++, compiler design, and low-level systems programming.
+</Note>
+
+## Browser engine debugging
+
+Build and modify Chromium or WebKit to understand rendering pipeline internals and add custom instrumentation.
+
+<Steps>
+  <Step title="Build Chromium/WebKit from source">
+    Set up the build environment and compile a full browser from source.
+    
+    For Chromium:
+    ```bash
+    # Fetch Chromium source (100GB+ download)
+    mkdir chromium && cd chromium
+    fetch --nohooks chromium
+    cd src
+    gclient runhooks
+    
+    # Build with debug symbols
+    gn gen out/Debug --args='is_debug=true symbol_level=2'
+    autoninja -C out/Debug chrome
+    ```
+    
+    <Warning>
+      Building Chromium requires 100GB+ disk space and several hours on fast hardware. Consider using remote build systems or pre-built debug binaries for initial exploration.
+    </Warning>
+  </Step>
+  
+  <Step title="Add custom tracing to layout engine">
+    Instrument the layout engine to track box model calculation, flex/grid algorithm execution, and performance bottlenecks.
+    
+    Key areas to instrument:
+    - `LayoutBlock::Layout()` - Block layout algorithm
+    - `LayoutFlexibleBox::LayoutFlexItems()` - Flexbox calculations
+    - `LayoutGrid::PlaceGridItems()` - Grid placement
+    - `InlineLayoutAlgorithm::Layout()` - Text layout
+    
+    ```cpp
+    // Example: Add layout tracing
+    void LayoutBlock::Layout() {
+      TRACE_EVENT0("blink.layout", "LayoutBlock::Layout");
+      TRACE_COUNTER1("blink.layout", "LayoutDepth", CurrentLayoutDepth());
+      
+      // Existing layout code...
+    }
+    ```
+  </Step>
+  
+  <Step title="Modify rendering pipeline for instrumentation">
+    Add custom metrics and logging to the paint and composite phases:
+    
+    - Track layer creation and promotion decisions
+    - Measure paint recording time
+    - Monitor texture memory usage
+    - Log composite thread interactions
+    
+    Use Chromium's tracing framework to export data for analysis in `chrome://tracing`.
+  </Step>
+  
+  <Step title="Debug compositor thread interactions">
+    Understand the communication between the main thread and compositor thread:
+    
+    - Track layer property updates and commits
+    - Monitor scroll synchronization
+    - Debug animation implementation
+    - Analyze thread contention and blocking
+    
+    <Info>
+      The compositor thread runs independently to maintain 60fps even when JavaScript is blocking the main thread.
+    </Info>
+  </Step>
+</Steps>
+
+## Project: Add custom profiling to browser engine
+
+Build a custom-instrumented version of Chromium or WebKit that exposes detailed internal metrics:
+
+<Steps>
+  <Step title="Choose instrumentation targets">
+    Identify the specific metrics and behavior you want to track:
+    - Layout algorithm execution time by type (flex, grid, block)
+    - Paint recording size and complexity
+    - Layer promotion decisions and reasons
+    - Texture memory allocation and eviction
+  </Step>
+  
+  <Step title="Implement custom tracing">
+    Add trace events, counters, and custom logging throughout the rendering pipeline.
+  </Step>
+  
+  <Step title="Export and analyze data">
+    Use `chrome://tracing` to visualize timeline data and identify performance issues.
+  </Step>
+  
+  <Step title="Validate insights">
+    Compare your instrumentation data with Chrome DevTools Performance tab to verify accuracy.
+  </Step>
+</Steps>
+
+<Note>
+  This level of engine modification is typically only necessary for engine developers or when debugging extremely complex rendering issues that cannot be diagnosed with standard tools.
+</Note>

@@ -1,0 +1,271 @@
+---
+title: Batching and scheduling
+description: RAF-based updates, double buffering, priority queues, and time slicing for optimal rendering performance
+---
+
+Efficient rendering isn't just about fast reconciliation—it's about **when** and **how** updates are scheduled and executed. Batching and scheduling strategies prevent wasted work and ensure smooth 60fps performance.
+
+## RequestAnimationFrame-based updates
+
+The browser's `requestAnimationFrame` (RAF) API is the foundation for coordinating updates with the display refresh cycle.
+
+<Info>
+  RAF callbacks run right before the browser paints. This is the ideal time to apply DOM updates—you get the latest state changes without causing extra frames.
+</Info>
+
+### Why RAF matters
+
+```javascript
+// Without RAF - causes layout thrashing
+function badUpdate() {
+  element.style.width = '100px';  // Write
+  element.offsetWidth;            // Read - forces layout
+  element.style.height = '200px'; // Write
+  element.offsetHeight;           // Read - forces layout again
+}
+
+// With RAF - batched updates
+function goodUpdate() {
+  requestAnimationFrame(() => {
+    element.style.width = '100px';
+    element.style.height = '200px';
+    // Browser batches all writes, single layout calculation
+  });
+}
+```
+
+<Note>
+  Modern React automatically batches updates within event handlers, but using RAF ensures your custom Virtual DOM library coordinates with browser paint timing.
+</Note>
+
+## Double buffering for UI consistency
+
+Double buffering maintains two representations of the UI to prevent visual inconsistencies during updates.
+
+<Steps>
+  <Step title="Current tree (screen buffer)">
+    The tree currently displayed to the user. This remains stable during reconciliation.
+  </Step>
+  
+  <Step title="Work-in-progress tree (back buffer)">
+    A clone being reconciled with new props/state. Changes are made here without affecting the visible UI.
+  </Step>
+  
+  <Step title="Swap">
+    Once reconciliation completes, the work-in-progress becomes current in one atomic operation.
+  </Step>
+</Steps>
+
+### Benefits
+
+| Without Double Buffering | With Double Buffering |
+|--------------------------|----------------------|
+| Partial updates visible | Atomic state transitions |
+| Inconsistent intermediate states | Always consistent UI |
+| Difficult to pause/resume | Can abandon work and restart |
+| Error recovery is complex | Easy rollback on error |
+
+<Info>
+  This pattern is borrowed from graphics programming, where double buffering prevents screen tearing. React's Fiber architecture uses this extensively.
+</Info>
+
+## Priority queues for updates
+
+Not all updates are equally urgent. Priority queues allow treating different updates with different scheduling strategies.
+
+### Priority levels
+
+```javascript
+const Priority = {
+  IMMEDIATE: 1,    // User input, click handlers
+  USER_BLOCKING: 2, // Hover effects, animations
+  NORMAL: 3,        // Data fetches, most updates
+  LOW: 4,           // Analytics, logging
+  IDLE: 5          // Background work
+};
+```
+
+### Queue management
+
+<Steps>
+  <Step title="Enqueue update">
+    When state changes, create an update object with priority and enqueue it.
+  </Step>
+  
+  <Step title="Sort by priority">
+    Maintain updates in priority order. Higher priority updates jump the queue.
+  </Step>
+  
+  <Step title="Process in RAF">
+    Inside requestAnimationFrame, process updates starting with highest priority.
+  </Step>
+  
+  <Step title="Yield if needed">
+    If time budget exhausted, save progress and continue next frame.
+  </Step>
+</Steps>
+
+<Note>
+  Priority-based scheduling prevents low-priority background work from delaying critical user interactions. A typing animation should never lag because analytics are processing.
+</Note>
+
+## Time slicing for interruptibility
+
+Time slicing breaks long-running reconciliation work into small chunks that can be paused and resumed.
+
+### The frame budget
+
+```javascript
+const FRAME_TIME = 16.67; // 60fps = 16.67ms per frame
+const WORK_BUDGET = 5;    // Reserve 5ms for work
+
+function workLoop(deadline) {
+  while (hasWork() && deadline.timeRemaining() > WORK_BUDGET) {
+    performUnitOfWork();
+  }
+  
+  if (hasWork()) {
+    requestAnimationFrame(workLoop); // Continue next frame
+  }
+}
+```
+
+<Info>
+  By checking `deadline.timeRemaining()` before each unit of work, you ensure the browser has time for layout, paint, and input handling—keeping the UI responsive even during heavy reconciliation.
+</Info>
+
+### Unit of work structure
+
+```javascript
+function performUnitOfWork() {
+  // 1. Reconcile this node
+  reconcileNode(currentNode);
+  
+  // 2. Return next unit of work
+  if (currentNode.child) {
+    return currentNode.child;
+  }
+  
+  if (currentNode.sibling) {
+    return currentNode.sibling;
+  }
+  
+  // 3. Walk up to find next sibling
+  return findNextUnitOfWork(currentNode);
+}
+```
+
+<Steps>
+  <Step title="Break into units">
+    Each node in the tree is one unit of work. This ensures consistent, predictable work chunks.
+  </Step>
+  
+  <Step title="Check time before unit">
+    Before processing each node, check if time budget remains.
+  </Step>
+  
+  <Step title="Pause and resume">
+    If budget exhausted, save current position and resume next frame.
+  </Step>
+  
+  <Step title="Complete phase atomically">
+    Once all reconciliation units finish, commit DOM changes in one uninterruptible pass.
+  </Step>
+</Steps>
+
+## Batching strategies
+
+Multiple state updates can often be batched into a single reconciliation pass.
+
+### Automatic batching
+
+```javascript
+function handleClick() {
+  setCount(count + 1);    // Update 1
+  setName('Alice');       // Update 2
+  setActive(true);        // Update 3
+  
+  // All three batched into one re-render
+}
+```
+
+### Flush strategies
+
+| Strategy | When to Use |
+|----------|-------------|
+| Sync flush | User input, critical updates |
+| Deferred flush | Low-priority updates, analytics |
+| Batched flush (default) | Normal event handlers |
+| Idle flush | Background work, non-urgent tasks |
+
+<Note>
+  React 18's automatic batching extends this to async operations, promises, and timeouts. Your Virtual DOM library should batch aggressively by default but provide escape hatches for synchronous updates.
+</Note>
+
+## Putting it together
+
+<Steps>
+  <Step title="State change occurs">
+    Component calls setState or similar. Create update object with priority.
+  </Step>
+  
+  <Step title="Enqueue and schedule">
+    Add update to priority queue. If no work in progress, schedule RAF callback.
+  </Step>
+  
+  <Step title="Reconciliation starts">
+    RAF fires. Clone current tree to create work-in-progress tree.
+  </Step>
+  
+  <Step title="Time-sliced work">
+    Process units of work (individual nodes) while checking time budget each iteration.
+  </Step>
+  
+  <Step title="Commit or yield">
+    If complete, commit work-in-progress to DOM and swap trees. If time runs out, save progress and continue next frame.
+  </Step>
+</Steps>
+
+<Info>
+  In the Week 6 project, you'll implement these batching and scheduling strategies in your Virtual DOM library, stress testing with 10,000+ dynamic nodes while profiling layout/paint timings to ensure 60fps performance.
+</Info>
+
+## Performance optimization patterns
+
+### Read/write batching (FastDOM pattern)
+
+```javascript
+// Bad - alternating reads and writes
+const height1 = el1.offsetHeight; // Read - forces layout
+el1.style.height = height1 + 10; // Write
+const height2 = el2.offsetHeight; // Read - forces layout again
+el2.style.height = height2 + 10; // Write
+
+// Good - batch reads, then writes
+const height1 = el1.offsetHeight; // Read
+const height2 = el2.offsetHeight; // Read
+el1.style.height = height1 + 10; // Write
+el2.style.height = height2 + 10; // Write - single layout
+```
+
+### Layout thrashing detection
+
+<Note>
+  Use performance marks to detect when your reconciliation work is causing excessive layouts. Each forced synchronous layout is wasted time that could delay your frame.
+</Note>
+
+```javascript
+performance.mark('reconcile-start');
+// ... reconciliation work
+performance.mark('reconcile-end');
+performance.measure('reconcile', 'reconcile-start', 'reconcile-end');
+
+const entries = performance.getEntriesByName('Layout');
+if (entries.length > 1) {
+  console.warn('Multiple layouts detected - possible thrashing');
+}
+```
+
+## Next steps
+
+With batching, scheduling, and time slicing in place, you have the core primitives needed for React-level performance. The next step is understanding React's Fiber architecture, which builds directly on these concepts to enable concurrent rendering and priority-based updates.

@@ -1,0 +1,890 @@
+---
+title: Event loop mechanics
+description: Master the JavaScript event loop, understand microtask and macrotask queues, animation frame callbacks, and task prioritization strategies
+---
+
+## Overview
+
+The event loop is the heart of JavaScript's concurrency model. It enables non-blocking I/O and asynchronous programming despite JavaScript being single-threaded. Understanding event loop mechanics is essential for writing performant, responsive applications.
+
+<Info>
+  The event loop continuously checks for work to do: executing scripts, processing events, and running queued callbacks. All JavaScript execution happens on a single thread, but the event loop orchestrates when different types of work get processed.
+</Info>
+
+## Event loop architecture
+
+The event loop manages multiple task queues with different priorities and processing rules.
+
+```
+┌───────────────────────────┐
+│   Call Stack (Running)    │
+│   JavaScript Execution    │
+└─────────────┬─────────────┘
+              │
+              v
+┌─────────────────────────────────────────┐
+│           Event Loop                    │
+│                                         │
+│  1. Execute script                      │
+│  2. Process microtasks (drain queue)    │
+│  3. Render (if needed)                  │
+│  4. Process one macrotask               │
+│  5. Process microtasks (drain queue)    │
+│  6. Repeat from step 3                  │
+└─────────────────────────────────────────┘
+              |
+    ┌─────────┴─────────┐
+    v                   v
+┌─────────┐       ┌──────────┐
+│Microtask│       │Macrotask │
+│ Queue   │       │  Queue   │
+└─────────┘       └──────────┘
+```
+
+### Processing phases
+
+<Steps>
+  <Step title="Execute current task">
+    Run JavaScript code until the call stack is empty (script execution, event handler, or callback)
+  </Step>
+  
+  <Step title="Process all microtasks">
+    Drain the microtask queue completely, including any new microtasks added during processing
+  </Step>
+  
+  <Step title="Render update (browser only)">
+    If rendering is needed, run animation frame callbacks and update the display
+  </Step>
+  
+  <Step title="Process next macrotask">
+    Take one macrotask from the queue and execute it
+  </Step>
+  
+  <Step title="Repeat">
+    Go back to step 2 and continue the loop
+  </Step>
+</Steps>
+
+<Warning>
+  Microtasks always run before the next macrotask or render. A microtask that continuously queues new microtasks will starve macrotasks and freeze the UI.
+</Warning>
+
+## Microtask queue
+
+Microtasks are high-priority tasks that execute immediately after the current task completes, before yielding to the browser.
+
+### What creates microtasks
+
+<Tabs>
+  <Tab title="Promise callbacks">
+    ```javascript
+    // Promise.then creates microtasks
+    console.log('1: Script start');
+    
+    Promise.resolve().then(() => {
+      console.log('3: Promise 1 microtask');
+    }).then(() => {
+      console.log('4: Promise 2 microtask');
+    });
+    
+    console.log('2: Script end');
+    
+    // Output:
+    // 1: Script start
+    // 2: Script end
+    // 3: Promise 1 microtask
+    // 4: Promise 2 microtask
+    ```
+    
+    **Key behaviors:**
+    - `.then()`, `.catch()`, `.finally()` schedule microtasks
+    - Microtasks run in order they were queued
+    - New microtasks execute before exiting microtask phase
+  </Tab>
+  
+  <Tab title="queueMicrotask">
+    ```javascript
+    // Explicit microtask scheduling
+    console.log('1: Start');
+    
+    queueMicrotask(() => {
+      console.log('3: Microtask 1');
+      
+      queueMicrotask(() => {
+        console.log('4: Nested microtask');
+      });
+    });
+    
+    console.log('2: End');
+    
+    // Output:
+    // 1: Start
+    // 2: End
+    // 3: Microtask 1
+    // 4: Nested microtask
+    ```
+    
+    Use `queueMicrotask()` for low-level scheduling when you need microtask timing without promises.
+  </Tab>
+  
+  <Tab title="MutationObserver">
+    ```javascript
+    // MutationObserver callbacks are microtasks
+    const observer = new MutationObserver((mutations) => {
+      console.log('3: DOM mutation observed');
+      // Runs as microtask after DOM changes
+    });
+    
+    const element = document.getElementById('target');
+    observer.observe(element, { childList: true });
+    
+    console.log('1: Before mutation');
+    element.appendChild(document.createElement('div'));
+    console.log('2: After mutation');
+    
+    // Output:
+    // 1: Before mutation
+    // 2: After mutation
+    // 3: DOM mutation observed
+    ```
+  </Tab>
+</Tabs>
+
+### Microtask queue draining
+
+The microtask queue is **fully drained** before moving to the next phase:
+
+```javascript
+function demonstrateDraining() {
+  console.log('1: Start');
+  
+  // Queue 3 microtasks
+  Promise.resolve().then(() => console.log('3: Microtask 1'));
+  Promise.resolve().then(() => console.log('4: Microtask 2'));
+  Promise.resolve().then(() => {
+    console.log('5: Microtask 3');
+    // This creates a NEW microtask during draining
+    Promise.resolve().then(() => console.log('6: Nested microtask'));
+  });
+  
+  // Queue a macrotask
+  setTimeout(() => console.log('7: Macrotask'), 0);
+  
+  console.log('2: End');
+}
+
+// Output:
+// 1: Start
+// 2: End
+// 3: Microtask 1
+// 4: Microtask 2
+// 5: Microtask 3
+// 6: Nested microtask  <- Runs before macrotask!
+// 7: Macrotask
+```
+
+<Info>
+  The nested microtask at step 6 runs before the macrotask because the entire microtask queue must drain before processing macrotasks.
+</Info>
+
+## Macrotask queue
+
+Macrotasks (also called tasks) are lower-priority work items that execute one at a time, with microtask processing and rendering between each.
+
+### What creates macrotasks
+
+<Tabs>
+  <Tab title="setTimeout/setInterval">
+    ```javascript
+    console.log('1: Start');
+    
+    setTimeout(() => {
+      console.log('4: Timeout 1');
+    }, 0);
+    
+    setTimeout(() => {
+      console.log('5: Timeout 2');
+    }, 0);
+    
+    Promise.resolve().then(() => {
+      console.log('3: Microtask');
+    });
+    
+    console.log('2: End');
+    
+    // Output:
+    // 1: Start
+    // 2: End
+    // 3: Microtask (runs first!)
+    // 4: Timeout 1 (macrotask)
+    // 5: Timeout 2 (macrotask)
+    ```
+    
+    **Timing guarantees:**
+    - Minimum delay, not exact timing
+    - Browser may clamp to 4ms for nested calls
+    - Background tabs may be throttled to 1000ms
+  </Tab>
+  
+  <Tab title="I/O operations">
+    ```javascript
+    // Node.js file I/O
+    const fs = require('fs');
+    
+    console.log('1: Start reading');
+    
+    fs.readFile('data.txt', (err, data) => {
+      console.log('3: File read complete');
+      // This callback runs as a macrotask
+    });
+    
+    Promise.resolve().then(() => {
+      console.log('2: Microtask');
+    });
+    
+    // Output:
+    // 1: Start reading
+    // 2: Microtask
+    // 3: File read complete
+    ```
+  </Tab>
+  
+  <Tab title="setImmediate (Node.js)">
+    ```javascript
+    // Node.js only - schedules macrotask
+    console.log('1: Start');
+    
+    setImmediate(() => {
+      console.log('4: setImmediate');
+    });
+    
+    process.nextTick(() => {
+      console.log('3: nextTick (microtask)');
+    });
+    
+    console.log('2: End');
+    
+    // Output:
+    // 1: Start
+    // 2: End
+    // 3: nextTick (microtask)
+    // 4: setImmediate (macrotask)
+    ```
+    
+    <Info>
+      `setImmediate` executes after I/O events but before timers in Node.js's event loop phases.
+    </Info>
+  </Tab>
+  
+  <Tab title="Message channel">
+    ```javascript
+    // MessageChannel for fast macrotask scheduling
+    const channel = new MessageChannel();
+    
+    channel.port1.onmessage = () => {
+      console.log('3: Message macrotask');
+    };
+    
+    console.log('1: Start');
+    channel.port2.postMessage(null);
+    
+    Promise.resolve().then(() => {
+      console.log('2: Microtask');
+    });
+    
+    // Output:
+    // 1: Start
+    // 2: Microtask
+    // 3: Message macrotask
+    ```
+    
+    MessageChannel provides faster macrotask scheduling than `setTimeout(fn, 0)`.
+  </Tab>
+</Tabs>
+
+### Macrotask processing
+
+Unlike microtasks, only **one macrotask** runs per event loop iteration:
+
+```javascript
+function demonstrateMacrotaskProcessing() {
+  console.log('1: Start');
+  
+  // Queue 3 macrotasks
+  setTimeout(() => {
+    console.log('3: Macrotask 1');
+    Promise.resolve().then(() => console.log('4: Microtask after macro 1'));
+  }, 0);
+  
+  setTimeout(() => {
+    console.log('6: Macrotask 2');
+    Promise.resolve().then(() => console.log('7: Microtask after macro 2'));
+  }, 0);
+  
+  setTimeout(() => {
+    console.log('9: Macrotask 3');
+  }, 0);
+  
+  console.log('2: End');
+}
+
+// Output:
+// 1: Start
+// 2: End
+// 3: Macrotask 1       <- First macrotask
+// 4: Microtask after macro 1  <- Drain microtasks
+// (potential render)
+// 6: Macrotask 2       <- Second macrotask
+// 7: Microtask after macro 2  <- Drain microtasks
+// (potential render)
+// 9: Macrotask 3       <- Third macrotask
+```
+
+<Warning>
+  Long-running macrotasks block rendering and user input. Break work into smaller chunks using `setTimeout` or `requestIdleCallback`.
+</Warning>
+
+## Animation frame callbacks
+
+Animation frame callbacks run before rendering, synchronized with the display refresh rate (typically 60Hz).
+
+### requestAnimationFrame timing
+
+```javascript
+function animateWithRAF() {
+  console.log('1: Script start');
+  
+  requestAnimationFrame(() => {
+    console.log('4: Animation frame 1');
+  });
+  
+  requestAnimationFrame(() => {
+    console.log('5: Animation frame 2');
+  });
+  
+  Promise.resolve().then(() => {
+    console.log('3: Microtask');
+  });
+  
+  setTimeout(() => {
+    console.log('6: Macrotask');
+  }, 0);
+  
+  console.log('2: Script end');
+}
+
+// Output:
+// 1: Script start
+// 2: Script end
+// 3: Microtask
+// 4: Animation frame 1  <- Before render
+// 5: Animation frame 2  <- Before render
+// (render happens here)
+// 6: Macrotask          <- After render
+```
+
+### Render timing and optimization
+
+<Tabs>
+  <Tab title="60fps animation">
+    ```javascript
+    // Smooth 60fps animation loop
+    function animate() {
+      const element = document.getElementById('box');
+      let position = 0;
+      
+      function frame(timestamp) {
+        // Update state
+        position += 2;
+        
+        // Apply changes (batched by browser)
+        element.style.transform = `translateX(${position}px)`;
+        
+        // Schedule next frame
+        if (position < 500) {
+          requestAnimationFrame(frame);
+        }
+      }
+      
+      requestAnimationFrame(frame);
+    }
+    ```
+    
+    <Info>
+      `requestAnimationFrame` automatically:
+      - Synchronizes with display refresh (60fps or higher)
+      - Pauses in background tabs to save resources
+      - Batches DOM reads/writes to avoid layout thrashing
+    </Info>
+  </Tab>
+  
+  <Tab title="Layout thrashing">
+    ```javascript
+    // BAD: Layout thrashing (forces multiple reflows)
+    function badAnimation() {
+      const boxes = document.querySelectorAll('.box');
+      
+      requestAnimationFrame(() => {
+        boxes.forEach(box => {
+          const height = box.clientHeight; // Read (causes layout)
+          box.style.height = height + 10 + 'px'; // Write (invalidates layout)
+          // Next read will force another layout calculation!
+        });
+      });
+    }
+    
+    // GOOD: Batch reads and writes
+    function goodAnimation() {
+      const boxes = document.querySelectorAll('.box');
+      
+      requestAnimationFrame(() => {
+        // Batch all reads
+        const heights = Array.from(boxes).map(box => box.clientHeight);
+        
+        // Batch all writes
+        boxes.forEach((box, i) => {
+          box.style.height = heights[i] + 10 + 'px';
+        });
+      });
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Compositor animations">
+    ```javascript
+    // Best performance: Compositor-only properties
+    function compositorAnimation() {
+      const element = document.getElementById('box');
+      let x = 0;
+      
+      function frame() {
+        // Only animate transform and opacity (compositor properties)
+        x += 2;
+        element.style.transform = `translateX(${x}px)`;
+        
+        if (x < 500) {
+          requestAnimationFrame(frame);
+        }
+      }
+      
+      requestAnimationFrame(frame);
+    }
+    ```
+    
+    **Compositor-only properties** (no layout/paint):
+    - `transform`
+    - `opacity`
+    - `filter` (some)
+    
+    **Properties that trigger layout/paint:**
+    - `left`, `top`, `width`, `height`
+    - `color`, `background-color`
+    - Most other visual properties
+  </Tab>
+</Tabs>
+
+### Render pipeline
+
+```
+Event Loop Iteration:
+
+1. Execute macrotask
+   └─> Call stack empties
+
+2. Process all microtasks
+   └─> Drain microtask queue
+
+3. Check if render needed
+   └─> If frame budget available:
+       ├─> Run animation frame callbacks (rAF)
+       ├─> Recalculate styles
+       ├─> Layout (reflow)
+       ├─> Paint
+       ├─> Composite
+       └─> Display to screen
+
+4. Process next macrotask
+```
+
+<Info>
+  The browser may skip rendering frames if the previous frame took too long, dropping to 30fps or lower to maintain responsiveness.
+</Info>
+
+## Idle callbacks and scheduling
+
+Idle callbacks run during idle periods when the browser has completed high-priority work.
+
+### requestIdleCallback
+
+```javascript
+// Run low-priority work during idle time
+function processLowPriorityWork() {
+  const tasks = getTasks();
+  
+  function processTasksWhenIdle(deadline) {
+    // Process tasks while time remains
+    while (deadline.timeRemaining() > 0 && tasks.length > 0) {
+      const task = tasks.shift();
+      processTask(task);
+    }
+    
+    // Schedule more work if tasks remain
+    if (tasks.length > 0) {
+      requestIdleCallback(processTasksWhenIdle);
+    }
+  }
+  
+  requestIdleCallback(processTasksWhenIdle, { timeout: 2000 });
+}
+```
+
+<Tabs>
+  <Tab title="Deadline API">
+    ```javascript
+    requestIdleCallback((deadline) => {
+      // Check remaining time in frame
+      console.log('Time remaining:', deadline.timeRemaining());
+      
+      // Check if forced by timeout
+      console.log('Did timeout:', deadline.didTimeout);
+      
+      if (deadline.timeRemaining() > 10) {
+        // Enough time for expensive operation
+        performExpensiveWork();
+      } else {
+        // Defer to next idle period
+        requestIdleCallback(callback);
+      }
+    });
+    ```
+    
+    **deadline.timeRemaining():**
+    - Returns milliseconds until frame deadline
+    - Typically 16.6ms - (work done so far)
+    - May be 0 if frame is already late
+  </Tab>
+  
+  <Tab title="Use cases">
+    ```javascript
+    // Analytics batching
+    const analyticsQueue = [];
+    
+    function trackEvent(event) {
+      analyticsQueue.push(event);
+      
+      requestIdleCallback(() => {
+        if (analyticsQueue.length > 0) {
+          sendAnalyticsBatch(analyticsQueue.splice(0));
+        }
+      });
+    }
+    
+    // Preloading/prefetching
+    requestIdleCallback(() => {
+      const images = document.querySelectorAll('img[data-src]');
+      images.forEach(img => {
+        const loader = new Image();
+        loader.src = img.dataset.src;
+      });
+    });
+    
+    // Background computation
+    requestIdleCallback((deadline) => {
+      while (deadline.timeRemaining() > 0 && hasMoreWork()) {
+        processChunk();
+      }
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Caveats">
+    <Warning>
+      **Idle callback limitations:**
+      - Not guaranteed to run (browser may never be idle)
+      - Not suitable for time-critical work
+      - Limited browser support (no Safari as of 2024)
+      - Use timeout option for fallback execution
+    </Warning>
+    
+    ```javascript
+    // Fallback for browsers without requestIdleCallback
+    const requestIdleCallback = window.requestIdleCallback || 
+      function(callback) {
+        const start = Date.now();
+        return setTimeout(() => {
+          callback({
+            didTimeout: false,
+            timeRemaining: () => Math.max(0, 50 - (Date.now() - start))
+          });
+        }, 1);
+      };
+    ```
+  </Tab>
+</Tabs>
+
+## Task prioritization
+
+Modern browsers support task prioritization through the Scheduler API and manual chunking strategies.
+
+### Scheduler API (experimental)
+
+```javascript
+// Priority-based task scheduling
+async function schedulePrioritizedWork() {
+  // User-blocking (highest priority)
+  scheduler.postTask(() => {
+    updateUIForUserInput();
+  }, { priority: 'user-blocking' });
+  
+  // User-visible (high priority)
+  scheduler.postTask(() => {
+    renderVisibleContent();
+  }, { priority: 'user-visible' });
+  
+  // Background (low priority)
+  scheduler.postTask(() => {
+    prefetchOffscreenContent();
+  }, { priority: 'background' });
+}
+```
+
+<Tabs>
+  <Tab title="Priority levels">
+    | Priority | Use case | Examples |
+    |----------|----------|----------|
+    | `user-blocking` | Immediate response to input | Click handlers, keyboard input |
+    | `user-visible` | Visible updates | Rendering content, animations |
+    | `background` | Deferrable work | Analytics, prefetching |
+    
+    ```javascript
+    // Abort lower-priority work
+    const controller = new TaskController();
+    
+    scheduler.postTask(() => {
+      expensiveBackgroundWork();
+    }, {
+      priority: 'background',
+      signal: controller.signal
+    });
+    
+    // Cancel if high-priority work arrives
+    document.addEventListener('click', () => {
+      controller.abort(); // Cancel background work
+      handleClick();
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Manual chunking">
+    ```javascript
+    // Break long task into chunks
+    async function processLargeDataset(items) {
+      const CHUNK_SIZE = 100;
+      
+      for (let i = 0; i < items.length; i += CHUNK_SIZE) {
+        // Process chunk
+        const chunk = items.slice(i, i + CHUNK_SIZE);
+        processChunk(chunk);
+        
+        // Yield to event loop
+        await scheduler.yield(); // Or: await new Promise(r => setTimeout(r, 0))
+      }
+    }
+    ```
+    
+    **scheduler.yield():**
+    - Yields to higher-priority work
+    - Maintains task priority after resuming
+    - Better than `setTimeout(fn, 0)` for prioritization
+  </Tab>
+  
+  <Tab title="Time slicing">
+    ```javascript
+    // Time-budget-based chunking
+    function timeSlicedProcessing(items, timeBudget = 5) {
+      let index = 0;
+      
+      function processChunk() {
+        const start = performance.now();
+        
+        while (index < items.length) {
+          processItem(items[index++]);
+          
+          // Check time budget
+          if (performance.now() - start > timeBudget) {
+            // Exceeded budget, yield
+            scheduler.postTask(processChunk, { priority: 'user-visible' });
+            return;
+          }
+        }
+        
+        // Done processing
+        onComplete();
+      }
+      
+      processChunk();
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Long task detection
+
+```javascript
+// Monitor for long tasks (>50ms)
+const observer = new PerformanceObserver((list) => {
+  for (const entry of list.getEntries()) {
+    if (entry.duration > 50) {
+      console.warn('Long task detected:', {
+        duration: entry.duration,
+        startTime: entry.startTime,
+        name: entry.name
+      });
+      
+      // Consider breaking this task into chunks
+    }
+  }
+});
+
+observer.observe({ entryTypes: ['longtask'] });
+```
+
+<Warning>
+  Tasks over 50ms block user input and cause jank. Break long tasks into {"<"}50ms chunks to maintain 60fps responsiveness.
+</Warning>
+
+## Complete event loop example
+
+Here's a comprehensive example demonstrating all queue types:
+
+```javascript
+function comprehensiveEventLoopDemo() {
+  console.log('1: Script start');
+  
+  // Macrotask
+  setTimeout(() => {
+    console.log('8: setTimeout macrotask');
+    
+    Promise.resolve().then(() => {
+      console.log('9: Microtask after setTimeout');
+    });
+  }, 0);
+  
+  // Microtask
+  Promise.resolve()
+    .then(() => {
+      console.log('3: Promise microtask 1');
+      return Promise.resolve();
+    })
+    .then(() => {
+      console.log('5: Promise microtask 2');
+    });
+  
+  // Another microtask
+  queueMicrotask(() => {
+    console.log('4: queueMicrotask');
+  });
+  
+  // Animation frame
+  requestAnimationFrame(() => {
+    console.log('6: Animation frame');
+  });
+  
+  // Idle callback
+  requestIdleCallback(() => {
+    console.log('10: Idle callback');
+  });
+  
+  console.log('2: Script end');
+}
+
+// Output:
+// 1: Script start
+// 2: Script end
+// 3: Promise microtask 1
+// 4: queueMicrotask
+// 5: Promise microtask 2
+// 6: Animation frame (before render)
+// (render occurs)
+// 8: setTimeout macrotask
+// 9: Microtask after setTimeout
+// 10: Idle callback (when browser is idle)
+```
+
+## Best practices
+
+<Tabs>
+  <Tab title="Choose the right queue">
+    | Task type | Use |
+    |-----------|-----|
+    | Critical state updates | Microtasks (`Promise.then`) |
+    | Async operations | Macrotasks (`setTimeout`) |
+    | Visual updates | `requestAnimationFrame` |
+    | Low-priority work | `requestIdleCallback` |
+    | Prioritized work | `scheduler.postTask` |
+  </Tab>
+  
+  <Tab title="Avoid starvation">
+    ```javascript
+    // BAD: Microtask starvation
+    function infiniteMicrotasks() {
+      Promise.resolve().then(() => {
+        infiniteMicrotasks(); // Never yields!
+      });
+    }
+    
+    // GOOD: Yield periodically
+    function cooperativeMicrotasks(count = 0) {
+      Promise.resolve().then(() => {
+        doWork();
+        
+        if (count < 100) {
+          cooperativeMicrotasks(count + 1);
+        } else {
+          // Yield to macrotask queue
+          setTimeout(() => cooperativeMicrotasks(0), 0);
+        }
+      });
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Optimize for 60fps">
+    ```javascript
+    // Target: 16.6ms per frame for 60fps
+    const FRAME_BUDGET = 16;
+    
+    function performanceAwareProcessing(items) {
+      let index = 0;
+      
+      function processFrame(timestamp) {
+        const frameStart = performance.now();
+        
+        while (index < items.length) {
+          processItem(items[index++]);
+          
+          // Check frame budget
+          if (performance.now() - frameStart > FRAME_BUDGET * 0.8) {
+            // Used 80% of frame budget, yield
+            requestAnimationFrame(processFrame);
+            return;
+          }
+        }
+      }
+      
+      requestAnimationFrame(processFrame);
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Garbage collection" icon="trash" href="/js-engine/garbage-collection">
+    Understand memory management and GC optimization strategies
+  </Card>
+  <Card title="JIT optimization" icon="gauge-high" href="/js-engine/jit-optimization">
+    Learn how engines optimize hot code with just-in-time compilation
+  </Card>
+</CardGroup>

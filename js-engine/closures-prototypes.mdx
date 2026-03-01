@@ -1,0 +1,752 @@
+---
+title: Closures and prototypes
+description: Implement JavaScript's closure mechanism with environment chains and prototype-based inheritance with efficient property lookup
+---
+
+Master two fundamental JavaScript features: closures that capture lexical scope and prototype chains that enable object-oriented programming without classes.
+
+## Overview
+
+Closures and prototypes are essential to JavaScript's identity as a language. Closures enable powerful functional programming patterns, while prototypes provide a flexible inheritance mechanism.
+
+<Info>
+Understanding closures and prototypes deeply is crucial for implementing a JavaScript engine and writing efficient JavaScript code.
+</Info>
+
+## Closure implementation with environment chains
+
+Closures allow functions to access variables from their lexical scope even after the outer function has returned. This is implemented using environment chains.
+
+### What is a closure?
+
+A closure is a function bundled together with references to its surrounding state (lexical environment).
+
+<CodeGroup>
+```javascript Simple closure
+function makeCounter() {
+    let count = 0;  // Captured by closure
+    
+    return function() {
+        count++;
+        return count;
+    };
+}
+
+const counter = makeCounter();
+console.log(counter()); // 1
+console.log(counter()); // 2
+console.log(counter()); // 3
+// count is preserved between calls
+```
+
+```javascript Multiple closures
+function makeCalculator(initial) {
+    let value = initial;
+    
+    return {
+        add: function(n) { value += n; },
+        subtract: function(n) { value -= n; },
+        getValue: function() { return value; }
+    };
+}
+
+const calc = makeCalculator(10);
+calc.add(5);        // value = 15
+calc.subtract(3);   // value = 12
+console.log(calc.getValue()); // 12
+// All three methods share the same 'value' variable
+```
+
+```javascript Nested closures
+function outer(x) {
+    return function middle(y) {
+        return function inner(z) {
+            // Can access x, y, and z
+            return x + y + z;
+        };
+    };
+}
+
+const result = outer(1)(2)(3);
+console.log(result); // 6
+```
+</CodeGroup>
+
+### Environment chains
+
+Environments form a chain from the innermost scope to the global scope:
+
+<Steps>
+  <Step title="Create environment">
+    When a function is called, create a new environment containing its local variables and parameters.
+  </Step>
+  
+  <Step title="Link to parent">
+    Set the environment's parent to the lexical parent scope (not the dynamic caller).
+  </Step>
+  
+  <Step title="Variable lookup">
+    Search for variables by traversing the chain from inner to outer environments.
+  </Step>
+  
+  <Step title="Capture references">
+    Functions store a reference to their creation environment, not a copy.
+  </Step>
+</Steps>
+
+### Implementation
+
+<CodeGroup>
+```cpp Environment structure
+class Environment {
+public:
+    std::shared_ptr<Environment> parent;
+    std::unordered_map<std::string, Value> bindings;
+    
+    Environment(std::shared_ptr<Environment> parent = nullptr)
+        : parent(parent) {}
+    
+    void define(const std::string& name, const Value& value) {
+        bindings[name] = value;
+    }
+    
+    Value* lookup(const std::string& name) {
+        // Search in current environment
+        auto it = bindings.find(name);
+        if (it != bindings.end()) {
+            return &it->second;
+        }
+        
+        // Search in parent environment
+        if (parent) {
+            return parent->lookup(name);
+        }
+        
+        return nullptr; // Variable not found
+    }
+    
+    void set(const std::string& name, const Value& value) {
+        // Search for existing binding
+        auto it = bindings.find(name);
+        if (it != bindings.end()) {
+            it->second = value;
+            return;
+        }
+        
+        // Try parent environment
+        if (parent) {
+            parent->set(name, value);
+            return;
+        }
+        
+        // Variable not found - error or create global
+        throw std::runtime_error("Undefined variable: " + name);
+    }
+};
+```
+
+```cpp Function with closure
+class Function {
+public:
+    std::vector<std::string> parameters;
+    BytecodeBuffer code;
+    std::shared_ptr<Environment> closure;  // Captured environment
+    
+    Function(std::vector<std::string> params,
+            BytecodeBuffer code,
+            std::shared_ptr<Environment> env)
+        : parameters(params), code(code), closure(env) {}
+    
+    Value call(VirtualMachine& vm,
+              const std::vector<Value>& args) {
+        // Create new environment for function call
+        auto callEnv = std::make_shared<Environment>(closure);
+        
+        // Bind parameters
+        for (size_t i = 0; i < parameters.size(); i++) {
+            Value arg = i < args.size() ? args[i] : Value::undefined();
+            callEnv->define(parameters[i], arg);
+        }
+        
+        // Execute function body with new environment
+        return vm.execute(code, callEnv);
+    }
+};
+```
+
+```cpp Creating closures
+void Compiler::visit(FunctionDeclaration& node) {
+    // Compile function body
+    BytecodeBuffer functionCode;
+    // ... compilation ...
+    
+    // Create function with current environment
+    auto func = std::make_shared<Function>(
+        node.parameters,
+        functionCode,
+        currentEnvironment  // Capture current environment!
+    );
+    
+    // Store function in current environment
+    currentEnvironment->define(node.name, Value::function(func));
+}
+
+// When calling a function:
+Value VirtualMachine::callFunction(Function* func,
+                                  const std::vector<Value>& args) {
+    // Function executes with its captured environment
+    // NOT the caller's environment
+    return func->call(*this, args);
+}
+```
+</CodeGroup>
+
+<Warning>
+Environments must use shared pointers or garbage collection to prevent memory leaks. Circular references between closures can cause memory issues.
+</Warning>
+
+### Upvalues optimization
+
+To avoid keeping entire environment chains alive, use upvalues to capture only needed variables:
+
+<CodeGroup>
+```cpp Upvalue structure
+class Upvalue {
+public:
+    // Points to either stack slot or heap location
+    Value* location;
+    Value closed;  // Used when variable moves off stack
+    bool isClosed;
+    
+    Upvalue(Value* loc) : location(loc), isClosed(false) {}
+    
+    Value& get() {
+        return isClosed ? closed : *location;
+    }
+    
+    void close() {
+        closed = *location;
+        location = &closed;
+        isClosed = true;
+    }
+};
+```
+
+```cpp Function with upvalues
+class Function {
+public:
+    std::vector<std::string> parameters;
+    BytecodeBuffer code;
+    std::vector<std::shared_ptr<Upvalue>> upvalues;
+    
+    // Instead of capturing entire environment,
+    // capture only needed variables
+};
+
+// New bytecode instructions:
+// LOAD_UPVALUE index    - Load from upvalue
+// STORE_UPVALUE index   - Store to upvalue
+// CLOSE_UPVALUE        - Close upvalue when variable goes out of scope
+```
+</CodeGroup>
+
+<Info>
+Lua pioneered the upvalue technique, which is more memory-efficient than capturing full environments.
+</Info>
+
+## Prototype chain traversal
+
+JavaScript uses prototype-based inheritance instead of class-based inheritance. Every object has a prototype, and property lookups traverse the prototype chain.
+
+### Prototype basics
+
+<CodeGroup>
+```javascript Object prototypes
+// Every object has a [[Prototype]] (accessed via __proto__)
+const obj = { x: 1 };
+console.log(obj.toString); // Inherited from Object.prototype
+
+// Constructor functions and prototypes
+function Person(name) {
+    this.name = name;
+}
+
+Person.prototype.greet = function() {
+    console.log(`Hello, I'm ${this.name}`);
+};
+
+const alice = new Person('Alice');
+alice.greet(); // "Hello, I'm Alice"
+// greet is found in Person.prototype
+```
+
+```javascript Prototype chain
+function Animal(name) {
+    this.name = name;
+}
+
+Animal.prototype.eat = function() {
+    console.log(`${this.name} is eating`);
+};
+
+function Dog(name, breed) {
+    Animal.call(this, name);
+    this.breed = breed;
+}
+
+// Set up inheritance
+Dog.prototype = Object.create(Animal.prototype);
+Dog.prototype.constructor = Dog;
+
+Dog.prototype.bark = function() {
+    console.log('Woof!');
+};
+
+const dog = new Dog('Max', 'Labrador');
+dog.bark(); // Woof! (found in Dog.prototype)
+dog.eat();  // Max is eating (found in Animal.prototype)
+```
+
+```javascript ES6 classes (syntactic sugar)
+class Animal {
+    constructor(name) {
+        this.name = name;
+    }
+    
+    eat() {
+        console.log(`${this.name} is eating`);
+    }
+}
+
+class Dog extends Animal {
+    constructor(name, breed) {
+        super(name);
+        this.breed = breed;
+    }
+    
+    bark() {
+        console.log('Woof!');
+    }
+}
+
+// Still uses prototype chain under the hood
+const dog = new Dog('Max', 'Labrador');
+console.log(dog.__proto__ === Dog.prototype); // true
+console.log(Dog.prototype.__proto__ === Animal.prototype); // true
+```
+</CodeGroup>
+
+### Prototype chain structure
+
+<Tabs>
+  <Tab title="Object structure">
+    Every object contains:
+    - Own properties (stored directly on the object)
+    - A hidden [[Prototype]] link to another object
+    
+    ```
+    dog object
+    ├── name: "Max" (own property)
+    ├── breed: "Labrador" (own property)
+    └── [[Prototype]] → Dog.prototype
+        ├── bark: function
+        └── [[Prototype]] → Animal.prototype
+            ├── eat: function
+            └── [[Prototype]] → Object.prototype
+                ├── toString: function
+                ├── valueOf: function
+                └── [[Prototype]] → null
+    ```
+  </Tab>
+  
+  <Tab title="Property lookup">
+    When accessing a property:
+    
+    1. Check own properties
+    2. If not found, check [[Prototype]]
+    3. Repeat step 2 up the chain
+    4. If reaches null, return undefined
+    
+    ```javascript
+    dog.name   // Found in own properties
+    dog.bark   // Found in Dog.prototype
+    dog.eat    // Found in Animal.prototype
+    dog.toString // Found in Object.prototype
+    dog.missing  // Not found anywhere → undefined
+    ```
+  </Tab>
+  
+  <Tab title="Property assignment">
+    Property assignment behavior:
+    
+    - Always creates/updates own property
+    - Never modifies prototype properties
+    - Exception: setter in prototype is called
+    
+    ```javascript
+    dog.eat = "cat food"; // Creates own property 'eat'
+    console.log(dog.eat); // "cat food" (own property)
+    console.log(Object.getPrototypeOf(dog).eat); // function (unchanged)
+    ```
+  </Tab>
+</Tabs>
+
+### Implementation
+
+<CodeGroup>
+```cpp Object structure
+class Object {
+public:
+    std::unordered_map<std::string, Value> properties;
+    std::shared_ptr<Object> prototype;  // [[Prototype]] link
+    
+    Object(std::shared_ptr<Object> proto = nullptr)
+        : prototype(proto) {}
+    
+    // Get property (traverses prototype chain)
+    Value get(const std::string& name) {
+        // Check own properties
+        auto it = properties.find(name);
+        if (it != properties.end()) {
+            return it->second;
+        }
+        
+        // Check prototype chain
+        if (prototype) {
+            return prototype->get(name);
+        }
+        
+        // Property not found
+        return Value::undefined();
+    }
+    
+    // Set property (always on own object)
+    void set(const std::string& name, const Value& value) {
+        properties[name] = value;
+    }
+    
+    // Check if property exists in prototype chain
+    bool has(const std::string& name) {
+        if (properties.count(name) > 0) {
+            return true;
+        }
+        if (prototype) {
+            return prototype->has(name);
+        }
+        return false;
+    }
+    
+    // Check if property is own property
+    bool hasOwn(const std::string& name) {
+        return properties.count(name) > 0;
+    }
+};
+```
+
+```cpp Constructor functions
+class Function : public Object {
+public:
+    // Every function has a prototype property
+    std::shared_ptr<Object> prototypeProperty;
+    
+    Function() {
+        // Create prototype object
+        prototypeProperty = std::make_shared<Object>();
+        prototypeProperty->set("constructor", Value::function(this));
+    }
+    
+    // Call as constructor with 'new'
+    Value construct(const std::vector<Value>& args) {
+        // Create new object with function's prototype
+        auto instance = std::make_shared<Object>(prototypeProperty);
+        
+        // Call function with 'this' bound to new object
+        Value result = callWithThis(Value::object(instance), args);
+        
+        // Return object (or function result if it's an object)
+        return result.isObject() ? result : Value::object(instance);
+    }
+};
+```
+
+```cpp Bytecode operations
+// New instructions for prototype operations
+case Opcode::NEW_OBJECT: {
+    // Create empty object with Object.prototype
+    auto obj = std::make_shared<Object>(objectPrototype);
+    push(Value::object(obj));
+    break;
+}
+
+case Opcode::GET_PROPERTY: {
+    uint32_t nameIndex = readOperand();
+    std::string name = bytecode.getConstant(nameIndex).asString();
+    
+    Value obj = pop();
+    if (!obj.isObject()) {
+        throw std::runtime_error("Cannot read property of non-object");
+    }
+    
+    // Traverse prototype chain
+    Value value = obj.asObject()->get(name);
+    push(value);
+    break;
+}
+
+case Opcode::SET_PROPERTY: {
+    uint32_t nameIndex = readOperand();
+    std::string name = bytecode.getConstant(nameIndex).asString();
+    
+    Value value = pop();
+    Value obj = pop();
+    if (!obj.isObject()) {
+        throw std::runtime_error("Cannot set property of non-object");
+    }
+    
+    // Set on own object (never on prototype)
+    obj.asObject()->set(name, value);
+    push(value);
+    break;
+}
+
+case Opcode::NEW: {
+    uint32_t argCount = readOperand();
+    Value constructor = peek(argCount);
+    
+    if (!constructor.isFunction()) {
+        throw std::runtime_error("Constructor must be a function");
+    }
+    
+    // Call as constructor
+    std::vector<Value> args;
+    for (uint32_t i = 0; i < argCount; i++) {
+        args.push_back(pop());
+    }
+    
+    Value instance = constructor.asFunction()->construct(args);
+    push(instance);
+    break;
+}
+```
+</CodeGroup>
+
+## Property lookup optimization
+
+Prototype chain traversal can be slow. Real JavaScript engines use sophisticated optimizations.
+
+### Inline caching
+
+Cache property locations to avoid repeated lookups:
+
+<CodeGroup>
+```cpp Inline cache
+struct PropertyCache {
+    std::shared_ptr<Object> cachedObject;
+    size_t cachedOffset;  // Offset in properties map
+    bool isValid;
+};
+
+class VM {
+private:
+    std::vector<PropertyCache> propertyCache;
+    
+public:
+    Value getProperty(Object* obj, const std::string& name, 
+                     size_t cacheIndex) {
+        PropertyCache& cache = propertyCache[cacheIndex];
+        
+        // Check cache hit
+        if (cache.isValid && cache.cachedObject.get() == obj) {
+            // Fast path: use cached offset
+            return obj->properties[name];
+        }
+        
+        // Cache miss: do full lookup
+        Value result = obj->get(name);
+        
+        // Update cache
+        cache.cachedObject = obj->shared_from_this();
+        cache.isValid = true;
+        
+        return result;
+    }
+};
+```
+
+```cpp Hidden classes (shapes)
+// Group objects with same property layout
+class Shape {
+public:
+    std::map<std::string, size_t> propertyOffsets;
+    std::shared_ptr<Shape> prototype;
+    
+    size_t getOffset(const std::string& name) {
+        auto it = propertyOffsets.find(name);
+        if (it != propertyOffsets.end()) {
+            return it->second;
+        }
+        if (prototype) {
+            return prototype->getOffset(name);
+        }
+        return -1;
+    }
+};
+
+class Object {
+public:
+    std::shared_ptr<Shape> shape;
+    std::vector<Value> slots;  // Properties stored by offset
+    
+    Value get(const std::string& name) {
+        size_t offset = shape->getOffset(name);
+        if (offset != -1) {
+            return slots[offset];
+        }
+        return Value::undefined();
+    }
+};
+```
+</CodeGroup>
+
+<Info>
+V8's "hidden classes" and SpiderMonkey's "shapes" use this technique to make property access as fast as C struct field access.
+</Info>
+
+### Polymorphic inline caching
+
+Handle multiple object shapes at the same call site:
+
+<Tabs>
+  <Tab title="Monomorphic">
+    Single object shape observed:
+    
+    ```cpp
+    if (shape == cachedShape) {
+        return slots[cachedOffset];  // Fast path
+    }
+    // Slow path: full lookup
+    ```
+  </Tab>
+  
+  <Tab title="Polymorphic">
+    Multiple shapes observed (typically 2-4):
+    
+    ```cpp
+    for (auto& cache : caches) {
+        if (shape == cache.shape) {
+            return slots[cache.offset];
+        }
+    }
+    // Slow path: full lookup
+    ```
+  </Tab>
+  
+  <Tab title="Megamorphic">
+    Too many shapes observed:
+    
+    ```cpp
+    // Skip inline cache, use optimized hash table
+    return hashTableLookup(shape, name);
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+Writing properties in different orders creates different shapes, leading to megamorphic inline caches and slower performance.
+</Warning>
+
+## Best practices
+
+<CardGroup cols={2}>
+  <Card title="Minimize closure size" icon="compress">
+    Only capture variables actually used by the closure to reduce memory usage
+  </Card>
+  
+  <Card title="Avoid modifying prototypes" icon="lock">
+    Changing prototypes at runtime invalidates inline caches and hurts performance
+  </Card>
+  
+  <Card title="Consistent object shapes" icon="shapes">
+    Initialize objects with all properties in the same order for better optimization
+  </Card>
+  
+  <Card title="Prefer composition" icon="puzzle-piece">
+    Use composition over deep inheritance chains for better performance and maintainability
+  </Card>
+</CardGroup>
+
+## Common pitfalls
+
+<AccordionGroup>
+  <Accordion title="Closure memory leaks">
+    Closures keep their entire environment alive, which can prevent garbage collection:
+    
+    ```javascript
+    function createHandler() {
+        const largeData = new Array(1000000);
+        
+        // This closure captures entire environment including largeData
+        return function() {
+            console.log('Handler called');
+        };
+    }
+    
+    // Better: explicitly null unused variables
+    function createHandler() {
+        const largeData = new Array(1000000);
+        // Use largeData...
+        largeData = null;  // Allow GC
+        
+        return function() {
+            console.log('Handler called');
+        };
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Prototype pollution">
+    Modifying Object.prototype affects all objects:
+    
+    ```javascript
+    // NEVER do this!
+    Object.prototype.myMethod = function() { /* ... */ };
+    
+    // Now ALL objects have myMethod
+    const obj = {};
+    console.log(obj.myMethod); // Exists!
+    
+    // Can cause security issues and break code
+    ```
+  </Accordion>
+  
+  <Accordion title="Shadowing prototype properties">
+    Own properties shadow prototype properties:
+    
+    ```javascript
+    function Person(name) {
+        this.name = name;
+    }
+    
+    Person.prototype.greet = function() {
+        console.log(`Hello, I'm ${this.name}`);
+    };
+    
+    const person = new Person('Alice');
+    person.greet = 'not a function';  // Shadows prototype method
+    
+    person.greet(); // TypeError: person.greet is not a function
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Parsing and AST" icon="code" href="/js-engine/parsing-ast">
+    Learn about lexical analysis, tokenization, and AST construction
+  </Card>
+  
+  <Card title="Bytecode and VM" icon="microchip" href="/js-engine/bytecode-vm">
+    Design bytecode and implement a stack-based virtual machine
+  </Card>
+</CardGroup>

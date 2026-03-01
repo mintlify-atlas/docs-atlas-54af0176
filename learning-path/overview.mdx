@@ -1,0 +1,403 @@
+---
+title: Learning path
+description: Master every layer from bare metal to production React through a structured 12-week curriculum
+---
+
+<Info>
+This is the definitive low-level frontend engineering course. You'll build browsers, engines, and frameworks from scratch.
+</Info>
+
+## Course progression
+
+The course is structured to build knowledge progressively, starting from hardware fundamentals and ending with production-ready systems.
+
+<Steps>
+  <Step title="Hardware fundamentals (Week 0.5)">
+    Start with CPU and memory architecture to understand how code executes at the lowest level.
+  </Step>
+  
+  <Step title="Network layer (Week 1)">
+    Build networking knowledge from scratch, implementing sockets, HTTP, TLS, and WebSockets.
+  </Step>
+  
+  <Step title="Browser engine (Weeks 2-3)">
+    Implement a complete browser engine with HTML parsing, CSS engine, layout, and rendering.
+  </Step>
+  
+  <Step title="JavaScript engine (Weeks 4-5)">
+    Build a JS engine from scratch with parsing, interpretation, garbage collection, and event loop.
+  </Step>
+  
+  <Step title="Virtual DOM (Week 6)">
+    Understand reconciliation algorithms, batching, and performance optimization strategies.
+  </Step>
+  
+  <Step title="React internals (Week 7)">
+    Deep dive into Fiber reconciler, hooks implementation, concurrent features, and SSR.
+  </Step>
+  
+  <Step title="Performance engineering (Week 8)">
+    Master profiling tools and optimization techniques for production applications.
+  </Step>
+  
+  <Step title="Engine modification (Week 9)">
+    Hack browser and JS engines, add custom instrumentation, and integrate WebAssembly.
+  </Step>
+  
+  <Step title="Hardware constraints (Week 10)">
+    Optimize for embedded systems and extreme resource constraints.
+  </Step>
+  
+  <Step title="Capstone project (Weeks 11-12)">
+    Build a complete production-ready system integrating all learned concepts.
+  </Step>
+</Steps>
+
+## Week-by-week breakdown
+
+### Week 0.5: CPU & memory architecture
+
+<CardGroup cols={2}>
+  <Card title="Hardware fundamentals" icon="microchip">
+    - CPU basics: fetch, decode, execute, writeback
+    - Registers & instructions
+    - Branching & pipelines with prediction
+    - Cache hierarchy (L1/L2/L3)
+    - Stack vs heap memory
+  </Card>
+  
+  <Card title="Low-level execution" icon="terminal">
+    - System calls overview
+    - Memory layout: text, data, stack, heap
+    - Pointers and memory alignment
+    - Virtual memory basics
+  </Card>
+</CardGroup>
+
+### Week 1: Networking from scratch
+
+<AccordionGroup>
+  <Accordion title="Core protocols">
+    - **Socket programming**: TCP & UDP sockets
+    - **TCP basics**: Three-way handshake, flow control
+    - **HTTP basics**: Parsing headers, chunked encoding, keep-alive
+    - **TLS basics**: Handshake overview, certificate verification
+    - **WebSocket basics**: Upgrade handshake, frame handling
+  </Accordion>
+  
+  <Accordion title="Network debugging">
+    - tcpdump / Wireshark fundamentals
+    - Simulate network latency and packet loss
+  </Accordion>
+</AccordionGroup>
+
+### Weeks 2-3: Browser engine implementation
+
+<CardGroup cols={2}>
+  <Card title="HTML parsing" icon="code">
+    - Tokenization state machine (13 states, 67 transitions)
+    - Tree construction algorithm
+    - Error recovery and quirks mode
+    - Parser-blocking scripts and async/defer
+  </Card>
+  
+  <Card title="CSS engine" icon="paintbrush">
+    - Tokenizer and parser
+    - Selector matching with specificity
+    - Cascade resolution algorithm
+    - Style computation and inheritance
+    - Media query evaluation
+  </Card>
+  
+  <Card title="Layout engine" icon="table-cells">
+    - Box model calculation
+    - Normal flow, floats, positioning
+    - Flexbox algorithm implementation
+    - Grid algorithm implementation
+    - Line breaking and text shaping
+  </Card>
+  
+  <Card title="Paint and composite" icon="layer-group">
+    - Layer tree construction
+    - Paint recording and display lists
+    - Rasterization strategies
+    - GPU compositing and textures
+  </Card>
+</CardGroup>
+
+<Note>
+**Project**: Build a browser engine in C++ or Rust that renders Wikipedia. Handle fonts, images, CSS animations. Measure every phase: parse, style, layout, paint, composite.
+</Note>
+
+### Weeks 4-5: JavaScript engine
+
+<Tabs>
+  <Tab title="Parsing & AST">
+    - Lexical analysis and tokenization
+    - Recursive descent parser
+    - AST construction and validation
+    - Scope analysis and symbol resolution
+  </Tab>
+  
+  <Tab title="Interpreter">
+    - Bytecode design and instruction set
+    - Stack-based VM execution
+    - Closure implementation with environment chains
+    - Prototype chain traversal
+    - Property lookup optimization (inline caches)
+  </Tab>
+  
+  <Tab title="Memory management">
+    - Mark-and-sweep garbage collection
+    - Generational collection (young/old generations)
+    - Incremental and concurrent GC
+    - WeakMap and WeakSet implementation
+    - Memory profiling and leak detection
+  </Tab>
+  
+  <Tab title="Event loop">
+    - Microtask queue (Promise.then)
+    - Macrotask queue (setTimeout, I/O)
+    - Animation frame callbacks
+    - Idle callbacks and scheduling
+    - Task prioritization
+  </Tab>
+  
+  <Tab title="JIT (Optional)">
+    - Inline caching and polymorphic inline caching
+    - Type feedback and speculative optimization
+    - Deoptimization and bailout mechanisms
+    - Register allocation
+  </Tab>
+</Tabs>
+
+<Note>
+**Project**: JS engine executing real programs. Implement closures, prototypes, async/await, event loop. Profile GC pauses and optimize hot paths. Connect to DOM for interactive apps.
+</Note>
+
+### Week 6: Virtual DOM & reconciliation
+
+<AccordionGroup>
+  <Accordion title="Diffing algorithms">
+    - Tree diffing complexity analysis (O(n³) → O(n))
+    - Key-based reconciliation
+    - Heuristics: component type, element type, lists
+    - Fiber architecture preparation
+  </Accordion>
+  
+  <Accordion title="Batching and scheduling">
+    - Requestanimationframe-based updates
+    - Double buffering for UI consistency
+    - Priority queues for updates
+    - Time slicing for interruptibility
+  </Accordion>
+  
+  <Accordion title="Repaint/reflow optimization">
+    - Layout thrashing detection
+    - Read/write batching (FastDOM pattern)
+    - CSS containment and layer creation
+    - Composite-only animations
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+**Project**: Virtual DOM library with optimized reconciliation. Stress test with 10,000+ dynamic nodes. Profile layout/paint timings.
+</Note>
+
+### Week 7: React/Next.js internals
+
+<CardGroup cols={2}>
+  <Card title="Fiber reconciler" icon="atom">
+    - Work loop and unit of work
+    - Reconciliation phases: render and commit
+    - Effect list construction
+    - Priority levels and lane model
+  </Card>
+  
+  <Card title="Hooks implementation" icon="link">
+    - Hooks queue and cursor
+    - useEffect cleanup and dependency checking
+    - useRef mutable container
+    - useCallback/useMemo memoization
+    - Custom hook composition
+  </Card>
+  
+  <Card title="Concurrent features" icon="arrows-spin">
+    - Time slicing and work interruption
+    - Suspense and lazy loading
+    - useTransition and useDeferredValue
+    - Automatic batching
+  </Card>
+  
+  <Card title="Server-side rendering" icon="server">
+    - renderToString vs renderToPipeableStream
+    - Progressive hydration and selective hydration
+    - Double pass problem and solutions
+    - Edge rendering vs Node rendering
+  </Card>
+</CardGroup>
+
+<AccordionGroup>
+  <Accordion title="Next.js architecture">
+    - File-based routing implementation
+    - SSG: getStaticProps build-time execution
+    - ISR: revalidation and stale-while-revalidate
+    - API routes and middleware
+    - Module bundling and code splitting
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+**Project**: Clone React's core reconciler with Fiber and hooks. Build SSR framework with streaming and hydration. Implement file-based routing.
+</Note>
+
+### Week 8: Performance engineering
+
+<CardGroup cols={3}>
+  <Card title="Profiling tools" icon="chart-line">
+    - Chrome DevTools Performance tab
+    - React DevTools Profiler
+    - Lighthouse metrics: FCP, LCP, TTI, CLS, FID
+    - Custom performance marks
+    - Heap snapshots and allocation timelines
+  </Card>
+  
+  <Card title="Optimization techniques" icon="gauge-high">
+    - Component memoization strategies
+    - Virtualized lists and windowing
+    - Image optimization: formats, lazy loading
+    - Font optimization: subsetting, preloading
+    - Bundle analysis and tree shaking
+    - Code splitting strategies
+  </Card>
+  
+  <Card title="Critical rendering path" icon="bolt">
+    - Eliminate render-blocking resources
+    - Minimize critical CSS
+    - Defer non-critical JavaScript
+    - Preload/prefetch/preconnect strategies
+  </Card>
+</CardGroup>
+
+<Note>
+**Project**: Optimize real-world app from 3s to {"<"}1s LCP. Document every optimization with before/after metrics. Handle 60fps animations with heavy DOM updates.
+</Note>
+
+### Week 9: Engine modification & debugging
+
+<Tabs>
+  <Tab title="JavaScript engine hacking">
+    - Build V8 from source with custom patches
+    - Add custom bytecode instructions
+    - Instrument GC for detailed metrics
+    - Profile JIT compilation decisions
+  </Tab>
+  
+  <Tab title="Browser engine debugging">
+    - Build Chromium/WebKit from source
+    - Add custom tracing to layout engine
+    - Modify rendering pipeline for instrumentation
+    - Debug compositor thread interactions
+  </Tab>
+  
+  <Tab title="WebAssembly integration">
+    - Compile C/C++/Rust to WASM
+    - Linear memory management
+    - JS ↔ WASM interop optimization
+    - SIMD and threads
+  </Tab>
+</Tabs>
+
+<Note>
+**Project**: Add custom profiling to browser engine. Build WASM module for computationally intensive task (image processing, physics simulation). Optimize JS/WASM boundary.
+</Note>
+
+### Week 10: Hardware simulation & constraints
+
+<CardGroup cols={2}>
+  <Card title="Embedded systems" icon="microchip">
+    - Run minimal browser on microcontroller simulation
+    - Memory-constrained rendering (64KB RAM)
+    - CPU-constrained JavaScript (10MHz)
+    - Display optimization for small screens
+  </Card>
+  
+  <Card title="Stress testing" icon="vial">
+    - Memory pressure simulation
+    - CPU throttling
+    - Network constraint testing (2G, 3G)
+    - GPU bottleneck analysis
+  </Card>
+</CardGroup>
+
+<Note>
+**Project**: Port mini-browser to embedded environment. Optimize for extreme constraints. Document performance characteristics.
+</Note>
+
+### Weeks 11-12: Capstone project
+
+<Steps>
+  <Step title="Custom browser engine">
+    Complete browser engine with HTML/CSS/JS support
+  </Step>
+  
+  <Step title="React-like framework">
+    Framework with Fiber and concurrent features
+  </Step>
+  
+  <Step title="SSR framework">
+    Server-side rendering with streaming and hydration
+  </Step>
+  
+  <Step title="Production application">
+    Production-optimized Next.js application
+  </Step>
+  
+  <Step title="Performance suite">
+    Full performance profiling suite
+  </Step>
+  
+  <Step title="WebAssembly acceleration">
+    WASM acceleration for critical paths
+  </Step>
+  
+  <Step title="Hardware testing">
+    Hardware constraint testing and optimization
+  </Step>
+</Steps>
+
+<Warning>
+**Requirements:**
+- Render complex UIs at 60fps
+- Handle 10,000+ concurrent DOM updates
+- Sub-second initial page load
+- Progressive enhancement and graceful degradation
+- Comprehensive error handling and edge cases
+- Full performance documentation
+</Warning>
+
+<Check>
+**Deliverable**: Production-ready system with complete understanding of every layer from CPU to pixels.
+</Check>
+
+## Prerequisites
+
+Before starting this course, you should have:
+
+<CardGroup cols={2}>
+  <Card title="Programming" icon="code">
+    Strong C/C++ or Rust programming skills
+  </Card>
+  
+  <Card title="Computer architecture" icon="microchip">
+    Knowledge of computer architecture fundamentals
+  </Card>
+  
+  <Card title="Operating systems" icon="terminal">
+    Understanding of operating systems fundamentals
+  </Card>
+  
+  <Card title="Algorithms" icon="diagram-project">
+    Mastery of data structures and algorithms
+  </Card>
+</CardGroup>

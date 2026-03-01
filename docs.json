@@ -1,122 +1,173 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Raw Bits to React",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#2563eb",
+    "light": "#3b82f6",
+    "dark": "#1e40af"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/renderffx/raw-bits-to-react"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/renderffx/raw-bits-to-react"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Course Overview",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
+            "pages": ["introduction", "prerequisites", "course-structure"]
+          },
+          {
+            "group": "Learning Path",
+            "pages": ["learning-path/overview", "learning-path/outcomes"]
+          }
+        ]
+      },
+      {
+        "tab": "Fundamentals",
+        "groups": [
+          {
+            "group": "Hardware Layer",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "fundamentals/cpu-architecture",
+              "fundamentals/memory-management",
+              "fundamentals/cache-basics"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Networking",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
-            ]
-          },
-          {
-            "group": "Writing content",
-            "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
-            ]
-          },
-          {
-            "group": "AI tools",
-            "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "fundamentals/socket-programming",
+              "fundamentals/tcp-http-basics",
+              "fundamentals/tls-websockets"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "Browser Engine",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "HTML & CSS",
             "pages": [
-              "api-reference/introduction"
+              "browser/html-parsing",
+              "browser/css-engine",
+              "browser/selector-matching"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Layout & Rendering",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "browser/layout-engine",
+              "browser/box-model-flexbox",
+              "browser/paint-composite"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "JavaScript Engine",
+        "groups": [
+          {
+            "group": "Parsing & Execution",
+            "pages": [
+              "js-engine/parsing-ast",
+              "js-engine/bytecode-vm",
+              "js-engine/closures-prototypes"
+            ]
+          },
+          {
+            "group": "Runtime",
+            "pages": [
+              "js-engine/garbage-collection",
+              "js-engine/event-loop",
+              "js-engine/jit-optimization"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "React Internals",
+        "groups": [
+          {
+            "group": "Virtual DOM",
+            "pages": [
+              "react/virtual-dom",
+              "react/reconciliation",
+              "react/batching-scheduling"
+            ]
+          },
+          {
+            "group": "Fiber & Hooks",
+            "pages": [
+              "react/fiber-architecture",
+              "react/hooks-implementation",
+              "react/concurrent-features"
+            ]
+          },
+          {
+            "group": "Server-Side Rendering",
+            "pages": [
+              "react/ssr-fundamentals",
+              "react/hydration",
+              "react/nextjs-architecture"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Performance",
+        "groups": [
+          {
+            "group": "Profiling & Optimization",
+            "pages": [
+              "performance/profiling-tools",
+              "performance/optimization-techniques",
+              "performance/critical-rendering-path"
+            ]
+          },
+          {
+            "group": "Advanced Topics",
+            "pages": [
+              "performance/engine-debugging",
+              "performance/webassembly",
+              "performance/hardware-constraints"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Projects",
+        "groups": [
+          {
+            "group": "Weekly Projects",
+            "pages": [
+              "projects/browser-engine",
+              "projects/js-engine",
+              "projects/virtual-dom-library",
+              "projects/react-clone",
+              "projects/ssr-framework"
+            ]
+          },
+          {
+            "group": "Capstone",
+            "pages": [
+              "projects/capstone-overview",
+              "projects/capstone-requirements"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

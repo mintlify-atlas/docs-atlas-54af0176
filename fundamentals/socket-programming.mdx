@@ -1,0 +1,120 @@
+---
+title: Socket programming
+description: Learn TCP and UDP socket programming fundamentals for network communication
+---
+
+## Introduction
+
+Socket programming forms the foundation of network communication. Understanding how to work with TCP and UDP sockets is essential for building networked applications from scratch.
+
+<Info>
+This is part of Week 1 – Networking from Scratch in the "From CPU to the Browser" course.
+</Info>
+
+## Socket types
+
+<Steps>
+  <Step title="TCP sockets">
+    Transmission Control Protocol (TCP) provides reliable, ordered, and error-checked delivery of data between applications. TCP sockets establish a connection before data transfer and maintain that connection throughout the communication.
+
+    **Key characteristics:**
+    - Connection-oriented protocol
+    - Guaranteed delivery and ordering
+    - Flow control and congestion control
+    - Higher overhead than UDP
+  </Step>
+
+  <Step title="UDP sockets">
+    User Datagram Protocol (UDP) is a connectionless protocol that sends messages (datagrams) without establishing a connection. It's faster but doesn't guarantee delivery or ordering.
+
+    **Key characteristics:**
+    - Connectionless protocol
+    - No delivery guarantees
+    - Lower latency and overhead
+    - Suitable for real-time applications
+  </Step>
+</Steps>
+
+## TCP socket workflow
+
+<Steps>
+  <Step title="Create socket">
+    Initialize a socket using the appropriate system call. The socket acts as an endpoint for network communication.
+  </Step>
+
+  <Step title="Bind to address">
+    Associate the socket with a specific IP address and port number. This step is typically done on the server side.
+  </Step>
+
+  <Step title="Listen for connections">
+    For TCP servers, put the socket in listening mode to accept incoming connection requests.
+  </Step>
+
+  <Step title="Accept connections">
+    Accept incoming client connections, creating a new socket for each connection.
+  </Step>
+
+  <Step title="Send and receive data">
+    Exchange data between client and server using send/receive operations.
+  </Step>
+
+  <Step title="Close connection">
+    Properly close the socket when communication is complete.
+  </Step>
+</Steps>
+
+## UDP socket workflow
+
+<Steps>
+  <Step title="Create socket">
+    Initialize a UDP socket for datagram communication.
+  </Step>
+
+  <Step title="Bind to address">
+    Bind the socket to an address and port (server side).
+  </Step>
+
+  <Step title="Send and receive datagrams">
+    Use sendto() and recvfrom() to exchange messages without establishing a connection.
+  </Step>
+
+  <Step title="Close socket">
+    Close the socket when done.
+  </Step>
+</Steps>
+
+## Use cases
+
+<CardGroup cols={2}>
+  <Card title="TCP use cases" icon="link">
+    - Web servers (HTTP/HTTPS)
+    - Email protocols (SMTP, IMAP)
+    - File transfer (FTP)
+    - Any application requiring reliable delivery
+  </Card>
+
+  <Card title="UDP use cases" icon="bolt">
+    - Video streaming
+    - Online gaming
+    - DNS queries
+    - VoIP applications
+  </Card>
+</CardGroup>
+
+<Warning>
+Always handle socket errors properly and implement timeouts to prevent indefinite blocking in production applications.
+</Warning>
+
+## Network debugging tools
+
+When working with sockets, these tools are essential for debugging:
+
+- **tcpdump**: Command-line packet analyzer for capturing network traffic
+- **Wireshark**: GUI-based network protocol analyzer with powerful filtering capabilities
+- **Network simulation**: Tools to simulate latency and packet loss for testing
+
+## Next steps
+
+<Card title="TCP basics" icon="arrow-right" href="/fundamentals/tcp-http-basics">
+  Learn about the three-way handshake, flow control, and HTTP parsing
+</Card>

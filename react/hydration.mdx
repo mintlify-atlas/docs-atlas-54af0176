@@ -1,0 +1,357 @@
+---
+title: Hydration in React
+description: Understand the hydration process, the double pass problem and its solutions, and the differences between Edge rendering and Node rendering environments.
+---
+
+## What is hydration?
+
+Hydration is the process of attaching React's event listeners and state management to server-rendered HTML, transforming static markup into a fully interactive application.
+
+<Info>
+Think of hydration as "bringing server-rendered HTML to life" by connecting React's virtual DOM to the actual DOM elements already rendered on the page.
+</Info>
+
+## The hydration process
+
+<Steps>
+  <Step title="Server renders HTML">
+    The server executes React components and generates HTML markup. This HTML is sent to the client as part of the initial page load.
+  </Step>
+
+  <Step title="Browser displays HTML">
+    The browser receives and displays the server-rendered HTML immediately. Users can see the content, but it's not yet interactive.
+  </Step>
+
+  <Step title="JavaScript loads">
+    The browser downloads and executes the React JavaScript bundle that contains the same components used for server rendering.
+  </Step>
+
+  <Step title="React hydrates">
+    React renders the component tree in memory and matches it against the existing DOM. It then attaches event handlers and makes the page interactive.
+  </Step>
+</Steps>
+
+<CodeGroup>
+```jsx Server-side
+import { renderToString } from 'react-dom/server';
+import App from './App';
+
+const html = renderToString(<App />);
+// Returns: <div><button>Click me</button></div>
+```
+
+```jsx Client-side
+import { hydrateRoot } from 'react-dom/client';
+import App from './App';
+
+const root = document.getElementById('root');
+hydrateRoot(root, <App />);
+// Attaches event listeners to existing <button>
+```
+</CodeGroup>
+
+## The double pass problem
+
+The double pass problem occurs when React must render components twice: once on the server and once on the client. This creates several challenges that impact performance and user experience.
+
+### Core issues
+
+<AccordionGroup>
+  <Accordion title="Duplicate work">
+    The same component tree is rendered twice—first on the server to generate HTML, then on the client to build the virtual DOM for hydration. This wastes CPU cycles and increases the total time to interactivity.
+
+    ```jsx
+    // This component renders twice
+    function ExpensiveComponent() {
+      // Expensive calculations happen on both server and client
+      const data = processLargeDataset();
+      return <div>{data}</div>;
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Mismatch errors">
+    If the server and client render different output, React throws hydration mismatch warnings. This can happen due to:
+    - Browser-only APIs (window, document)
+    - Random values or timestamps
+    - User-specific content
+    - Environment differences
+
+    ```jsx
+    // Causes hydration mismatch
+    function BrokenComponent() {
+      return <div>{Math.random()}</div>; // Different on server vs client
+    }
+    ```
+
+    <Warning>
+    Hydration mismatches can cause React to discard server-rendered HTML and re-render from scratch, negating SSR performance benefits.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="All-or-nothing hydration">
+    Traditional hydration blocks the entire page from being interactive until all components have hydrated. A single slow component can delay interactivity for the entire application.
+  </Accordion>
+
+  <Accordion title="Data serialization overhead">
+    Server-side data must be serialized and embedded in HTML, then deserialized on the client. Large data sets increase HTML size and parsing time.
+
+    ```jsx
+    // Data embedded in HTML
+    <script>
+      window.__INITIAL_DATA__ = {/* potentially huge object */};
+    </script>
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Solutions to the double pass problem
+
+Modern React provides several strategies to mitigate the double pass problem and improve hydration performance.
+
+<Tabs>
+  <Tab title="Streaming SSR">
+    ### Streaming server-side rendering
+
+    Send HTML to the client incrementally as components finish rendering, rather than waiting for the entire tree.
+
+    ```jsx
+    import { renderToPipeableStream } from 'react-dom/server';
+
+    const { pipe } = renderToPipeableStream(<App />, {
+      onShellReady() {
+        // Send initial shell immediately
+        pipe(res);
+      }
+    });
+    ```
+
+    **Benefits:**
+    - Faster Time to First Byte (TTFB)
+    - Progressive content delivery
+    - Better perceived performance
+  </Tab>
+
+  <Tab title="Selective hydration">
+    ### Selective hydration with Suspense
+
+    Hydrate components independently based on priority and user interaction.
+
+    ```jsx
+    import { lazy, Suspense } from 'react';
+
+    const Comments = lazy(() => import('./Comments'));
+
+    function Post() {
+      return (
+        <article>
+          <h1>Post Title</h1>
+          <PostContent /> {/* Hydrates immediately */}
+          <Suspense fallback={<Spinner />}>
+            <Comments /> {/* Hydrates when ready or on interaction */}
+          </Suspense>
+        </article>
+      );
+    }
+    ```
+
+    **Benefits:**
+    - Faster Time to Interactive for critical parts
+    - Prioritizes user-visible content
+    - Non-blocking hydration
+  </Tab>
+
+  <Tab title="Two-pass rendering">
+    ### Controlled two-pass rendering
+
+    Explicitly handle client-only content to avoid mismatches.
+
+    ```jsx
+    import { useState, useEffect } from 'react';
+
+    function ClientOnlyContent() {
+      const [mounted, setMounted] = useState(false);
+
+      useEffect(() => {
+        setMounted(true);
+      }, []);
+
+      if (!mounted) {
+        // Server and first client render return same thing
+        return <div>Loading...</div>;
+      }
+
+      // Only renders after hydration
+      return <div>{window.innerWidth}px</div>;
+    }
+    ```
+
+    **Benefits:**
+    - Prevents hydration mismatches
+    - Graceful handling of client-only features
+    - Predictable rendering behavior
+  </Tab>
+
+  <Tab title="Server Components">
+    ### React Server Components
+
+    Render components exclusively on the server, sending only the resulting UI to the client without requiring hydration.
+
+    ```jsx
+    // ServerComponent.server.jsx
+    async function ServerComponent() {
+      const data = await db.query(); // Runs only on server
+      return <div>{data}</div>; // No JavaScript sent to client
+    }
+    ```
+
+    **Benefits:**
+    - Zero client-side JavaScript for server components
+    - No double rendering for these components
+    - Direct database/file system access
+    - Reduced bundle size
+  </Tab>
+</Tabs>
+
+## Edge rendering vs Node rendering
+
+The choice of rendering environment significantly impacts performance, scalability, and capabilities.
+
+<Tabs>
+  <Tab title="Edge rendering">
+    ### Edge rendering
+
+    Execute server-side rendering on edge locations close to users, using lightweight JavaScript runtimes like Cloudflare Workers or Vercel Edge Functions.
+
+    **Architecture:**
+    - Distributed globally across CDN edge nodes
+    - Runs in V8 isolates, not full Node.js
+    - Minimal cold start times (< 10ms)
+    - Limited runtime capabilities
+
+    **Advantages:**
+
+    <CardGroup cols={2}>
+      <Card title="Lower latency" icon="gauge-high">
+        Rendering happens closer to users, reducing round-trip time for initial HTML.
+      </Card>
+
+      <Card title="Faster cold starts" icon="bolt">
+        V8 isolates start nearly instantly compared to Node.js processes.
+      </Card>
+
+      <Card title="Better scalability" icon="arrow-up-right-dots">
+        Edge functions auto-scale across global infrastructure without manual configuration.
+      </Card>
+
+      <Card title="Cost efficiency" icon="dollar-sign">
+        Pay-per-request pricing and no idle server costs.
+      </Card>
+    </CardGroup>
+
+    **Limitations:**
+
+    ```jsx
+    // Not available in Edge runtime
+    import fs from 'fs'; // ❌ No file system access
+    import { exec } from 'child_process'; // ❌ No process spawning
+
+    // Limited APIs
+    const buffer = new ArrayBuffer(1024 * 1024 * 100); // ❌ Memory limits
+    ```
+
+    <Warning>
+    Edge runtimes have strict limitations: no file system access, no native modules, limited memory, and shorter execution timeouts.
+    </Warning>
+
+    **Best for:**
+    - Static or cache-friendly content
+    - Global applications requiring low latency
+    - Simple rendering without complex Node.js dependencies
+    - Applications prioritizing cold start performance
+  </Tab>
+
+  <Tab title="Node rendering">
+    ### Node rendering
+
+    Traditional server-side rendering using full Node.js runtime, typically on dedicated servers or serverless functions.
+
+    **Architecture:**
+    - Runs in complete Node.js environment
+    - Can be deployed on VMs, containers, or serverless platforms
+    - Full access to Node.js APIs and ecosystem
+    - Higher cold start times (100ms-1s+)
+
+    **Advantages:**
+
+    <CardGroup cols={2}>
+      <Card title="Full Node.js APIs" icon="node-js">
+        Access to file system, child processes, native modules, and the entire npm ecosystem.
+      </Card>
+
+      <Card title="Complex processing" icon="microchip">
+        Handle heavy computational tasks, image processing, and database connections.
+      </Card>
+
+      <Card title="Mature ecosystem" icon="cubes">
+        Use any npm package without edge runtime compatibility concerns.
+      </Card>
+
+      <Card title="Flexible resources" icon="sliders">
+        Configure memory, CPU, and execution time based on application needs.
+      </Card>
+    </CardGroup>
+
+    **Capabilities:**
+
+    ```jsx
+    // Full Node.js capabilities available
+    import fs from 'fs'; // ✅ File system access
+    import sharp from 'sharp'; // ✅ Native modules
+    import { Client } from 'pg'; // ✅ Database connections
+
+    async function ServerComponent() {
+      const data = await fs.promises.readFile('./data.json');
+      const db = new Client();
+      await db.connect();
+      // Complex server-side logic
+    }
+    ```
+
+    **Challenges:**
+    - Higher latency for geographically distributed users
+    - Slower cold starts for serverless deployments
+    - More complex scaling and infrastructure management
+    - Higher idle costs for always-on servers
+
+    **Best for:**
+    - Applications with complex server-side logic
+    - Heavy use of Node.js native modules
+    - Database-intensive operations
+    - When using third-party libraries incompatible with edge runtimes
+  </Tab>
+</Tabs>
+
+## Choosing the right environment
+
+<Steps>
+  <Step title="Assess your dependencies">
+    If your application requires Node.js-specific APIs, native modules, or file system access, Node rendering is necessary. If you only use web-standard APIs, Edge rendering is viable.
+  </Step>
+
+  <Step title="Consider your users">
+    For globally distributed users, Edge rendering provides better latency. For regional applications or those with centralized data, Node rendering may be sufficient.
+  </Step>
+
+  <Step title="Evaluate complexity">
+    Simple rendering logic benefits from Edge's instant cold starts. Complex server-side processing may require Node's full capabilities.
+  </Step>
+
+  <Step title="Test and measure">
+    Profile both options with your actual application. Measure TTFB, hydration time, and total cost to determine the best fit.
+  </Step>
+</Steps>
+
+<Info>
+Many modern frameworks like Next.js support hybrid approaches, allowing you to use Edge rendering for some routes and Node rendering for others based on specific requirements.
+</Info>

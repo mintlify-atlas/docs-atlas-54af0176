@@ -1,0 +1,308 @@
+---
+title: Layout engine
+description: Master box model calculation, normal flow, floats, and positioning schemes in browser layout engines
+---
+
+The layout engine is responsible for calculating the precise position and dimensions of every element on the page. This phase transforms the styled DOM tree into a geometric representation that can be painted to the screen.
+
+<Info>
+Layout is one of the most computationally intensive phases in the browser rendering pipeline. Understanding how it works is crucial for building performant web applications.
+</Info>
+
+## Box model calculation
+
+Every element in HTML is represented as a rectangular box. The box model defines how the size of each box is calculated based on content, padding, border, and margin.
+
+<Steps>
+  <Step title="Calculate content box">
+    Determine the intrinsic size of the content, including text, images, and child elements.
+  </Step>
+  
+  <Step title="Apply padding">
+    Add padding space between the content and the border. Padding is included in the element's background.
+  </Step>
+  
+  <Step title="Apply border">
+    Add border width around the padding area. Border styles and colors are applied during the paint phase.
+  </Step>
+  
+  <Step title="Apply margin">
+    Add margin space outside the border. Margins can collapse with adjacent elements' margins.
+  </Step>
+</Steps>
+
+The `box-sizing` property determines whether padding and border are included in the element's specified width and height:
+
+<Tabs>
+  <Tab title="content-box">
+    Default behavior. Width and height apply only to the content box. Padding and border are added outside.
+    
+    ```
+    total width = width + padding-left + padding-right + border-left + border-right
+    ```
+  </Tab>
+  
+  <Tab title="border-box">
+    Width and height include padding and border. The content box shrinks to accommodate them.
+    
+    ```
+    total width = width
+    content width = width - padding-left - padding-right - border-left - border-right
+    ```
+  </Tab>
+</Tabs>
+
+## Normal flow
+
+Normal flow is the default layout mode where elements are laid out according to their position in the document tree.
+
+### Block formatting context
+
+Block-level elements stack vertically, each starting on a new line:
+
+- Each block takes up the full available width of its container
+- Blocks are positioned one after another vertically
+- Vertical margins between adjacent blocks collapse
+- Block elements establish their own formatting context
+
+### Inline formatting context
+
+Inline elements flow horizontally within their containing block:
+
+- Inline elements sit on the same line as adjacent inline elements
+- Line breaking occurs when elements exceed container width
+- Vertical alignment is controlled by `vertical-align`
+- Inline elements respect horizontal margins and padding
+
+<Info>
+Understanding the difference between block and inline formatting contexts is fundamental to predicting layout behavior.
+</Info>
+
+## Floats
+
+Floats remove an element from normal flow and shift it to the left or right side of its container, allowing content to wrap around it.
+
+<Steps>
+  <Step title="Remove from normal flow">
+    The floated element is taken out of the normal document flow, so block elements below it move up to fill the space.
+  </Step>
+  
+  <Step title="Position to edge">
+    The element is shifted to the left or right edge of its containing block, or until it touches another floated element.
+  </Step>
+  
+  <Step title="Shrink to fit">
+    Floated elements shrink-wrap to their content width unless an explicit width is set.
+  </Step>
+  
+  <Step title="Wrap inline content">
+    Subsequent inline content flows around the floated element, creating a wrapping effect.
+  </Step>
+</Steps>
+
+### Clearing floats
+
+The `clear` property prevents an element from appearing next to floated elements:
+
+- `clear: left` - Element moves below left-floated elements
+- `clear: right` - Element moves below right-floated elements
+- `clear: both` - Element moves below all floated elements
+
+<Warning>
+Floats can cause parent containers to collapse to zero height if they only contain floated children. Use clearfix techniques or establish a new block formatting context to prevent this.
+</Warning>
+
+## Positioning schemes
+
+The `position` property determines how an element is positioned in the layout.
+
+<Tabs>
+  <Tab title="static">
+    Default positioning. Element follows normal flow and ignores `top`, `right`, `bottom`, `left`, and `z-index` properties.
+    
+    ```css
+    .element {
+      position: static;
+    }
+    ```
+  </Tab>
+  
+  <Tab title="relative">
+    Element is positioned according to normal flow, then offset by `top`, `right`, `bottom`, `left` values. The element's original space is preserved.
+    
+    ```css
+    .element {
+      position: relative;
+      top: 10px;
+      left: 20px;
+    }
+    ```
+  </Tab>
+  
+  <Tab title="absolute">
+    Element is removed from normal flow and positioned relative to its nearest positioned ancestor (or the initial containing block). Does not affect surrounding elements.
+    
+    ```css
+    .element {
+      position: absolute;
+      top: 0;
+      right: 0;
+    }
+    ```
+  </Tab>
+  
+  <Tab title="fixed">
+    Element is removed from normal flow and positioned relative to the viewport. Remains in the same position during scrolling.
+    
+    ```css
+    .element {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+    }
+    ```
+  </Tab>
+  
+  <Tab title="sticky">
+    Element toggles between relative and fixed positioning depending on scroll position. Sticks to a specified position when scrolling past a threshold.
+    
+    ```css
+    .element {
+      position: sticky;
+      top: 0;
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Stacking contexts
+
+Positioned elements with a `z-index` value create stacking contexts that determine the painting order:
+
+<Steps>
+  <Step title="Establish stacking context">
+    Elements with `position` other than `static` and a `z-index` value create a new stacking context.
+  </Step>
+  
+  <Step title="Order children">
+    Within a stacking context, children are ordered by their `z-index` value. Higher values appear on top.
+  </Step>
+  
+  <Step title="Isolate from siblings">
+    Elements within a stacking context cannot interleave with elements in a different stacking context.
+  </Step>
+</Steps>
+
+<Info>
+Many properties beyond `position` and `z-index` can create stacking contexts, including `opacity`, `transform`, `filter`, and `will-change`.
+</Info>
+
+## Line breaking and text shaping
+
+Text layout involves complex algorithms for breaking lines and shaping glyphs.
+
+### Line breaking algorithm
+
+The browser determines where to break lines based on:
+
+- Available width in the container
+- Word boundaries and whitespace
+- Hyphenation rules (when enabled)
+- Breaking opportunities in the Unicode specification
+- Language-specific breaking rules
+
+<Tabs>
+  <Tab title="Normal breaking">
+    Lines break at whitespace and punctuation boundaries.
+    
+    ```css
+    .text {
+      word-break: normal;
+      overflow-wrap: normal;
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Break all">
+    Lines can break between any two characters.
+    
+    ```css
+    .text {
+      word-break: break-all;
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Keep all">
+    Prevents breaking between characters in CJK text.
+    
+    ```css
+    .text {
+      word-break: keep-all;
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Hyphenation">
+    Enables automatic hyphenation at appropriate syllable boundaries.
+    
+    ```css
+    .text {
+      hyphens: auto;
+      lang: en;
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Text shaping
+
+Text shaping converts character codes into positioned glyphs:
+
+<Steps>
+  <Step title="Font selection">
+    Choose the appropriate font face based on `font-family`, `font-weight`, `font-style`, and character availability.
+  </Step>
+  
+  <Step title="Glyph mapping">
+    Map each character to its corresponding glyph in the selected font.
+  </Step>
+  
+  <Step title="Apply OpenType features">
+    Process ligatures, kerning, and other typographic features defined in the font.
+  </Step>
+  
+  <Step title="Position glyphs">
+    Calculate the exact position of each glyph based on metrics, kerning, and layout properties.
+  </Step>
+</Steps>
+
+<Warning>
+Text shaping is highly complex for languages with complex scripts (Arabic, Devanagari, Thai) that require contextual glyph selection and reordering.
+</Warning>
+
+## Implementation considerations
+
+When building a layout engine from scratch:
+
+<CardGroup cols={2}>
+  <Card title="Incremental layout" icon="arrows-rotate">
+    Optimize by only recalculating layout for changed subtrees rather than the entire document.
+  </Card>
+  
+  <Card title="Layout caching" icon="database">
+    Cache layout results to avoid redundant calculations when styles haven't changed.
+  </Card>
+  
+  <Card title="Constraint solving" icon="calculator">
+    Use efficient algorithms for resolving layout constraints, especially for complex layout modes.
+  </Card>
+  
+  <Card title="Measurement phase" icon="ruler">
+    Separate measurement from positioning to enable more efficient layout passes.
+  </Card>
+</CardGroup>
+
+<Info>
+**Project checkpoint:** Build a layout engine in C++ or Rust that handles box model calculation, normal flow, floats, and all positioning schemes. Test with real-world HTML documents and measure layout performance.
+</Info>

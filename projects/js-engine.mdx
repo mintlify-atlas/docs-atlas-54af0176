@@ -1,0 +1,161 @@
+---
+title: JavaScript engine
+description: Build a JavaScript engine that executes real programs with closures, prototypes, async/await, and event loop
+---
+
+<Info>
+  This project spans **Weeks 4-5** and implements a complete JavaScript runtime from parsing to execution.
+</Info>
+
+## Overview
+
+Build a JavaScript engine capable of executing real-world programs. Implement the complete execution pipeline including parsing, bytecode compilation, VM execution, garbage collection, and event loop mechanics.
+
+## Project requirements
+
+<CardGroup cols={2}>
+  <Card title="Language features" icon="javascript">
+    Closures, prototypes, async/await
+  </Card>
+  <Card title="Runtime" icon="clock">
+    Complete event loop implementation
+  </Card>
+  <Card title="Memory" icon="memory">
+    Garbage collection with profiling
+  </Card>
+  <Card title="Integration" icon="link">
+    Connect to DOM for interactive apps
+  </Card>
+</CardGroup>
+
+## Core components
+
+<Steps>
+  <Step title="Parsing and AST">
+    Build a JavaScript parser with:
+    
+    - Lexical analysis and tokenization
+    - Recursive descent parser
+    - AST construction and validation
+    - Scope analysis and symbol resolution
+    
+    The parser must handle modern JavaScript syntax and produce a valid AST.
+  </Step>
+  
+  <Step title="Interpreter implementation">
+    Create a bytecode interpreter featuring:
+    
+    - Bytecode design and instruction set
+    - Stack-based VM execution
+    - Closure implementation with environment chains
+    - Prototype chain traversal
+    - Property lookup optimization (inline caches)
+    
+    The VM must execute JavaScript semantics correctly with acceptable performance.
+  </Step>
+  
+  <Step title="Memory management">
+    Implement garbage collection with:
+    
+    - Mark-and-sweep garbage collection
+    - Generational collection (young/old generations)
+    - Incremental and concurrent GC
+    - WeakMap and WeakSet implementation
+    - Memory profiling and leak detection
+    
+    Profile GC pauses and optimize for minimal interruption.
+  </Step>
+  
+  <Step title="Event loop mechanics">
+    Build the event loop system:
+    
+    - Microtask queue (Promise.then)
+    - Macrotask queue (setTimeout, I/O)
+    - Animation frame callbacks
+    - Idle callbacks and scheduling
+    - Task prioritization
+    
+    The event loop must correctly handle async operations and maintain task ordering.
+  </Step>
+</Steps>
+
+## Optional: JIT compilation
+
+<Note>
+  For advanced implementation, add just-in-time compilation for hot code paths.
+</Note>
+
+- Inline caching and polymorphic inline caching
+- Type feedback and speculative optimization
+- Deoptimization and bailout mechanisms
+- Register allocation
+
+## Language features
+
+<AccordionGroup>
+  <Accordion title="Closures">
+    Implement lexical scoping with environment chains. Closures must capture variables correctly and maintain references across execution contexts.
+  </Accordion>
+  
+  <Accordion title="Prototypes">
+    Implement prototype chain traversal for property lookup. Support constructor functions and prototype-based inheritance.
+  </Accordion>
+  
+  <Accordion title="Async/await">
+    Implement async functions and await expressions. Properly handle promise chains and async control flow.
+  </Accordion>
+  
+  <Accordion title="Event loop">
+    Correctly schedule microtasks and macrotasks. Implement Promise.then, setTimeout, and other async APIs.
+  </Accordion>
+</AccordionGroup>
+
+## Performance optimization
+
+<CardGroup cols={2}>
+  <Card title="Hot path optimization" icon="fire">
+    Profile execution and optimize frequently called code paths.
+  </Card>
+  <Card title="GC tuning" icon="gauge-high">
+    Minimize garbage collection pauses for smooth execution.
+  </Card>
+  <Card title="Inline caches" icon="bolt">
+    Cache property lookups for faster execution.
+  </Card>
+  <Card title="Memory profiling" icon="chart-line">
+    Track allocations and identify memory leaks.
+  </Card>
+</CardGroup>
+
+## DOM integration
+
+<Info>
+  Connect your JavaScript engine to a DOM implementation for interactive applications.
+</Info>
+
+Implement bindings that allow JavaScript code to:
+
+- Query and manipulate DOM elements
+- Add event listeners
+- Modify styles and attributes
+- Create and remove nodes dynamically
+
+## Deliverables
+
+- Working JavaScript engine executing real programs
+- Complete closure and prototype implementations
+- Functional async/await with event loop
+- Garbage collector with profiling metrics
+- DOM bindings for interactive apps
+- Performance analysis showing GC pauses and hot path optimization
+- Test suite demonstrating language feature compliance
+
+## Success criteria
+
+- Execute real-world JavaScript programs correctly
+- Pass closure and scope test suites
+- Handle async/await and promises properly
+- Event loop maintains correct task ordering
+- GC pauses remain under acceptable thresholds
+- DOM integration enables interactive applications
+- Inline caches improve property lookup performance

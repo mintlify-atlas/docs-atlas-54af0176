@@ -1,0 +1,404 @@
+---
+title: Concurrent features
+description: Explore React's concurrent features including time slicing, work interruption, Suspense, lazy loading, useTransition, and useDeferredValue
+---
+
+React's concurrent features enable applications to remain responsive during expensive rendering work by allowing React to interrupt, pause, and prioritize updates.
+
+## Time slicing and work interruption
+
+Time slicing is the technique that allows React to break rendering work into small chunks and spread them across multiple frames, keeping the UI responsive.
+
+<Info>
+  Time slicing is the foundation of React's concurrent mode. Without it, long renders would block the main thread and make the UI feel frozen.
+</Info>
+
+### How time slicing works
+
+<Steps>
+  <Step title="Start rendering">
+    React begins processing a render with a specific priority level assigned to lanes.
+  </Step>
+  
+  <Step title="Process units of work">
+    React processes Fiber nodes one at a time, performing reconciliation work.
+  </Step>
+  
+  <Step title="Check deadline">
+    After each unit of work, React checks if it has exceeded its time budget (typically 5ms).
+  </Step>
+  
+  <Step title="Yield or continue">
+    If the deadline is reached, React yields control to the browser. Otherwise, it continues with the next unit of work.
+  </Step>
+  
+  <Step title="Resume later">
+    The browser handles high-priority tasks (like input events), then React resumes rendering from where it left off.
+  </Step>
+</Steps>
+
+<Tabs>
+  <Tab title="Without time slicing">
+    In traditional React, a large render blocks the main thread until completion:
+    - User input feels sluggish
+    - Animations stutter
+    - The page appears frozen
+    - All updates are synchronous
+  </Tab>
+  
+  <Tab title="With time slicing">
+    Concurrent React breaks work into chunks:
+    - User input remains responsive
+    - Animations stay smooth at 60fps
+    - UI updates are interruptible
+    - High-priority work can interrupt low-priority work
+  </Tab>
+</Tabs>
+
+### Work interruption
+
+When a higher-priority update arrives during a render, React can interrupt the current work and start processing the urgent update.
+
+<Steps>
+  <Step title="Detect high-priority update">
+    A user interaction (like a click or text input) triggers a high-priority state update.
+  </Step>
+  
+  <Step title="Interrupt current render">
+    React immediately stops the current low-priority render, even if it's halfway through.
+  </Step>
+  
+  <Step title="Process urgent update">
+    React processes the high-priority update in a new render pass.
+  </Step>
+  
+  <Step title="Discard or resume">
+    After the urgent update commits, React either discards the interrupted work (if it's now stale) or resumes it.
+  </Step>
+</Steps>
+
+<Info>
+  Work interruption is why the render phase must be pure and side-effect free. React may call render functions multiple times or discard renders that never commit.
+</Info>
+
+### Priority inversion prevention
+
+React prevents priority inversion where low-priority work blocks high-priority work:
+
+<Tabs>
+  <Tab title="Lane entanglement">
+    When a low-priority update reads state from a high-priority update, their lanes become entangled. This ensures they render together and prevents inconsistent UI states.
+  </Tab>
+  
+  <Tab title="Starvation prevention">
+    Low-priority updates that wait too long are automatically promoted to higher priority lanes, ensuring they eventually complete.
+  </Tab>
+  
+  <Tab title="Batching">
+    Multiple updates in the same priority lane are batched together, reducing unnecessary renders.
+  </Tab>
+</Tabs>
+
+## Suspense and lazy loading
+
+Suspense allows components to "wait" for asynchronous operations while showing a fallback UI. It's React's declarative approach to loading states.
+
+### Basic Suspense usage
+
+```javascript
+import { Suspense, lazy } from 'react';
+
+const LazyComponent = lazy(() => import('./LazyComponent'));
+
+function App() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <LazyComponent />
+    </Suspense>
+  );
+}
+```
+
+<Steps>
+  <Step title="Start rendering">
+    React begins rendering the component tree inside the Suspense boundary.
+  </Step>
+  
+  <Step title="Component suspends">
+    When a component isn't ready (e.g., code hasn't loaded), it throws a Promise.
+  </Step>
+  
+  <Step title="Catch the Promise">
+    The nearest Suspense boundary catches the thrown Promise and shows the fallback UI.
+  </Step>
+  
+  <Step title="Wait for resolution">
+    React waits for the Promise to resolve (e.g., code chunk loads).
+  </Step>
+  
+  <Step title="Retry render">
+    Once the Promise resolves, React retries rendering the component, which now succeeds.
+  </Step>
+</Steps>
+
+<Info>
+  Suspense works by catching thrown Promises during render. This is why data fetching libraries for Suspense must throw Promises when data isn't ready.
+</Info>
+
+### Code splitting with lazy
+
+The `lazy` function enables component-level code splitting:
+
+<Tabs>
+  <Tab title="Without lazy">
+    ```javascript
+    import HeavyComponent from './HeavyComponent';
+    
+    function App() {
+      return <HeavyComponent />;
+    }
+    ```
+    The entire component is bundled in the main JavaScript file, increasing initial load time.
+  </Tab>
+  
+  <Tab title="With lazy">
+    ```javascript
+    const HeavyComponent = lazy(() => import('./HeavyComponent'));
+    
+    function App() {
+      return (
+        <Suspense fallback={<Loading />}>
+          <HeavyComponent />
+        </Suspense>
+      );
+    }
+    ```
+    The component is split into a separate chunk and loaded on demand when first rendered.
+  </Tab>
+</Tabs>
+
+### Nested Suspense boundaries
+
+You can nest Suspense boundaries to show loading states at different granularities:
+
+```javascript
+function App() {
+  return (
+    <Suspense fallback={<PageLoader />}>
+      <Navigation />
+      <Suspense fallback={<SidebarLoader />}>
+        <Sidebar />
+      </Suspense>
+      <Suspense fallback={<ContentLoader />}>
+        <MainContent />
+      </Suspense>
+    </Suspense>
+  );
+}
+```
+
+<Steps>
+  <Step title="Independent loading states">
+    Each Suspense boundary manages loading state for its children independently.
+  </Step>
+  
+  <Step title="Granular fallbacks">
+    Show specific loading UI for each section rather than a single page-wide spinner.
+  </Step>
+  
+  <Step title="Progressive disclosure">
+    Ready parts of the UI appear immediately while slower parts continue loading.
+  </Step>
+</Steps>
+
+<Info>
+  Nested Suspense boundaries enable progressive loading patterns where fast content appears first, with slower content appearing incrementally.
+</Info>
+
+## useTransition and useDeferredValue
+
+These hooks provide APIs for marking updates as non-urgent, keeping the UI responsive during expensive state changes.
+
+### useTransition
+
+`useTransition` allows you to mark state updates as transitions, which are lower-priority and can be interrupted.
+
+```javascript
+import { useState, useTransition } from 'react';
+
+function SearchResults() {
+  const [query, setQuery] = useState('');
+  const [isPending, startTransition] = useTransition();
+  
+  const handleChange = (e) => {
+    // Urgent: Update the input immediately
+    setQuery(e.target.value);
+    
+    // Non-urgent: Update search results as a transition
+    startTransition(() => {
+      setSearchResults(computeResults(e.target.value));
+    });
+  };
+  
+  return (
+    <>
+      <input value={query} onChange={handleChange} />
+      {isPending && <Spinner />}
+      <ResultsList />
+    </>
+  );
+}
+```
+
+<Tabs>
+  <Tab title="Urgent updates">
+    Updates outside `startTransition` are synchronous and high-priority:
+    - User input in form fields
+    - Focus changes
+    - Toggling UI elements
+    - Immediate visual feedback
+  </Tab>
+  
+  <Tab title="Transition updates">
+    Updates inside `startTransition` are interruptible and lower-priority:
+    - Search results
+    - Filter/sort operations
+    - Route navigation
+    - Heavy computations
+  </Tab>
+</Tabs>
+
+<Steps>
+  <Step title="Mark as transition">
+    Wrap state updates in `startTransition` to mark them as non-urgent.
+  </Step>
+  
+  <Step title="Keep UI responsive">
+    React keeps the current UI interactive while processing the transition in the background.
+  </Step>
+  
+  <Step title="Interrupt if needed">
+    If the user makes another change, React can interrupt the transition and start a new one.
+  </Step>
+  
+  <Step title="Show pending state">
+    The `isPending` flag lets you show loading indicators during the transition.
+  </Step>
+</Steps>
+
+<Info>
+  Transitions solve the problem of "slow updates blocking fast updates." The input field updates immediately while expensive filtering happens in the background.
+</Info>
+
+### useDeferredValue
+
+`useDeferredValue` provides a deferred version of a value that lags behind the actual value during transitions.
+
+```javascript
+import { useState, useDeferredValue } from 'react';
+
+function SearchResults() {
+  const [query, setQuery] = useState('');
+  const deferredQuery = useDeferredValue(query);
+  
+  // query updates immediately (for the input)
+  // deferredQuery updates as a transition (for results)
+  
+  return (
+    <>
+      <input value={query} onChange={e => setQuery(e.target.value)} />
+      <ResultsList query={deferredQuery} />
+    </>
+  );
+}
+```
+
+<Tabs>
+  <Tab title="useTransition">
+    ```javascript
+    const [isPending, startTransition] = useTransition();
+    startTransition(() => {
+      setState(newValue);
+    });
+    ```
+    Explicitly mark state updates as transitions. Gives you an `isPending` flag.
+  </Tab>
+  
+  <Tab title="useDeferredValue">
+    ```javascript
+    const [value, setValue] = useState('');
+    const deferredValue = useDeferredValue(value);
+    ```
+    Create a deferred version of a value. Simpler API when you don't control the state update.
+  </Tab>
+</Tabs>
+
+### When to use transitions
+
+<Steps>
+  <Step title="Expensive renders">
+    Use transitions when state updates trigger expensive renders that would otherwise make the UI feel frozen.
+  </Step>
+  
+  <Step title="Navigation">
+    Route changes often involve loading new components and data. Transitions keep the current page interactive during navigation.
+  </Step>
+  
+  <Step title="Filtering/sorting">
+    When filtering or sorting large lists, transitions allow the filter input to update immediately while results update in the background.
+  </Step>
+  
+  <Step title="Real-time search">
+    Showing search results as the user types can be slow. Transitions keep typing responsive while results update.
+  </Step>
+</Steps>
+
+<Info>
+  Transitions are most effective when the slow part is rendering, not data fetching. For slow data fetching, combine transitions with Suspense.
+</Info>
+
+## Automatic batching
+
+React automatically batches multiple state updates that occur in the same event handler or async context into a single re-render.
+
+<Tabs>
+  <Tab title="Before React 18">
+    ```javascript
+    // Only batched in event handlers
+    function handleClick() {
+      setCount(c => c + 1);
+      setFlag(f => !f);
+      // Single re-render
+    }
+    
+    // NOT batched in promises/timeouts
+    fetch('/api').then(() => {
+      setCount(c => c + 1);
+      setFlag(f => !f);
+      // Two re-renders
+    });
+    ```
+  </Tab>
+  
+  <Tab title="React 18+">
+    ```javascript
+    // Batched everywhere
+    function handleClick() {
+      setCount(c => c + 1);
+      setFlag(f => !f);
+      // Single re-render
+    }
+    
+    // Also batched in promises/timeouts
+    fetch('/api').then(() => {
+      setCount(c => c + 1);
+      setFlag(f => !f);
+      // Single re-render
+    });
+    ```
+  </Tab>
+</Tabs>
+
+<Info>
+  Automatic batching improves performance by reducing unnecessary re-renders. If you need to opt-out, use `ReactDOM.flushSync()` to force synchronous updates.
+</Info>

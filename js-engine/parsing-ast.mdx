@@ -1,0 +1,455 @@
+---
+title: Parsing and AST
+description: Build a JavaScript parser from scratch with lexical analysis, tokenization, recursive descent parsing, and AST construction
+---
+
+Learn how to transform raw JavaScript source code into an Abstract Syntax Tree (AST) through lexical analysis, tokenization, and parsing. This is the foundational step in building a JavaScript engine.
+
+## Overview
+
+Parsing is the process of converting JavaScript source code into a structured representation that the engine can understand and execute. This involves multiple stages working together to analyze the syntax and build an AST.
+
+<Info>
+The parser is the first major component of a JavaScript engine, sitting between the raw source code and the interpreter/compiler.
+</Info>
+
+## Lexical analysis and tokenization
+
+Lexical analysis is the process of breaking down source code into meaningful tokens. Each token represents a fundamental building block of the language.
+
+<Steps>
+  <Step title="Scan characters">
+    Read the source code character by character, identifying patterns that form tokens.
+  </Step>
+  
+  <Step title="Classify tokens">
+    Categorize each token by type: keywords, identifiers, operators, literals, punctuation.
+  </Step>
+  
+  <Step title="Generate token stream">
+    Produce a sequence of tokens that will be consumed by the parser.
+  </Step>
+</Steps>
+
+### Token types
+
+A robust tokenizer must recognize and classify different token types:
+
+<CodeGroup>
+```javascript Keywords
+// Reserved words in JavaScript
+function, const, let, var, if, else, while, for, return, class, extends
+```
+
+```javascript Identifiers
+// Variable and function names
+variableName, _privateVar, $jquery, myFunction123
+```
+
+```javascript Operators
+// Arithmetic, logical, and assignment operators
++, -, *, /, %, ==, ===, !=, !==, &&, ||, =, +=, -=
+```
+
+```javascript Literals
+// Numbers, strings, booleans, null, undefined
+42, 3.14, "hello", 'world', true, false, null, undefined
+```
+</CodeGroup>
+
+<Warning>
+Proper handling of edge cases like Unicode identifiers, regex literals, and template strings is crucial for a production-ready tokenizer.
+</Warning>
+
+## Recursive descent parser
+
+The recursive descent parser is a top-down parsing technique where each non-terminal in the grammar is implemented as a function.
+
+### Parser structure
+
+The parser consists of mutually recursive functions that mirror the grammar rules:
+
+<CodeGroup>
+```cpp Basic structure
+class Parser {
+private:
+    Lexer& lexer;
+    Token currentToken;
+    
+    void advance() {
+        currentToken = lexer.nextToken();
+    }
+    
+    bool match(TokenType type) {
+        if (currentToken.type == type) {
+            advance();
+            return true;
+        }
+        return false;
+    }
+    
+public:
+    ASTNode* parseProgram();
+    ASTNode* parseStatement();
+    ASTNode* parseExpression();
+    ASTNode* parsePrimary();
+};
+```
+
+```cpp Parse expression
+ASTNode* Parser::parseExpression() {
+    // Parse binary expression with precedence
+    ASTNode* left = parsePrimary();
+    
+    while (isBinaryOperator(currentToken)) {
+        Token op = currentToken;
+        advance();
+        ASTNode* right = parsePrimary();
+        left = new BinaryExpression(op, left, right);
+    }
+    
+    return left;
+}
+```
+
+```cpp Parse statement
+ASTNode* Parser::parseStatement() {
+    // Function declaration
+    if (match(TokenType::FUNCTION)) {
+        return parseFunctionDeclaration();
+    }
+    
+    // Variable declaration
+    if (match(TokenType::LET) || match(TokenType::CONST)) {
+        return parseVariableDeclaration();
+    }
+    
+    // If statement
+    if (match(TokenType::IF)) {
+        return parseIfStatement();
+    }
+    
+    // Expression statement
+    return parseExpressionStatement();
+}
+```
+</CodeGroup>
+
+### Operator precedence
+
+Handling operator precedence correctly is essential for parsing expressions:
+
+<Accordion title="Operator precedence table">
+| Precedence | Operators | Associativity |
+|------------|-----------|---------------|
+| 15 | `()`, `[]`, `.` | Left-to-right |
+| 14 | `++`, `--`, `!`, `typeof` | Right-to-left |
+| 13 | `**` | Right-to-left |
+| 12 | `*`, `/`, `%` | Left-to-right |
+| 11 | `+`, `-` | Left-to-right |
+| 10 | `<`, `<=`, `>`, `>=` | Left-to-right |
+| 9 | `==`, `===`, `!=`, `!==` | Left-to-right |
+| 5 | `&&` | Left-to-right |
+| 4 | `||` | Left-to-right |
+| 3 | `=`, `+=`, `-=`, etc. | Right-to-left |
+</Accordion>
+
+## AST construction and validation
+
+The Abstract Syntax Tree is a hierarchical representation of the program structure. Each node represents a syntactic construct.
+
+### AST node types
+
+Different AST nodes represent different language constructs:
+
+<CardGroup cols={2}>
+  <Card title="Declarations" icon="file-code">
+    - Function declarations
+    - Variable declarations
+    - Class declarations
+  </Card>
+  
+  <Card title="Statements" icon="list">
+    - Expression statements
+    - If/else statements
+    - Loop statements
+    - Return statements
+  </Card>
+  
+  <Card title="Expressions" icon="calculator">
+    - Binary expressions
+    - Call expressions
+    - Member expressions
+    - Literals
+  </Card>
+  
+  <Card title="Special" icon="star">
+    - Program (root node)
+    - Block statements
+    - Function parameters
+  </Card>
+</CardGroup>
+
+<CodeGroup>
+```cpp AST node base class
+class ASTNode {
+public:
+    enum class Type {
+        Program,
+        FunctionDeclaration,
+        VariableDeclaration,
+        BinaryExpression,
+        CallExpression,
+        Identifier,
+        Literal
+    };
+    
+    virtual ~ASTNode() = default;
+    virtual Type getType() const = 0;
+    virtual void accept(ASTVisitor& visitor) = 0;
+};
+```
+
+```cpp Binary expression node
+class BinaryExpression : public ASTNode {
+public:
+    std::string op;
+    std::unique_ptr<ASTNode> left;
+    std::unique_ptr<ASTNode> right;
+    
+    BinaryExpression(std::string op, ASTNode* l, ASTNode* r)
+        : op(op), left(l), right(r) {}
+    
+    Type getType() const override {
+        return Type::BinaryExpression;
+    }
+    
+    void accept(ASTVisitor& visitor) override {
+        visitor.visit(*this);
+    }
+};
+```
+
+```cpp Function declaration node
+class FunctionDeclaration : public ASTNode {
+public:
+    std::string name;
+    std::vector<std::string> parameters;
+    std::unique_ptr<ASTNode> body;
+    
+    FunctionDeclaration(std::string name,
+                       std::vector<std::string> params,
+                       ASTNode* body)
+        : name(name), parameters(params), body(body) {}
+    
+    Type getType() const override {
+        return Type::FunctionDeclaration;
+    }
+    
+    void accept(ASTVisitor& visitor) override {
+        visitor.visit(*this);
+    }
+};
+```
+</CodeGroup>
+
+### AST validation
+
+After construction, the AST should be validated for semantic correctness:
+
+<Steps>
+  <Step title="Type checking">
+    Verify that operations are performed on compatible types.
+  </Step>
+  
+  <Step title="Reference validation">
+    Ensure all variables and functions are declared before use.
+  </Step>
+  
+  <Step title="Control flow analysis">
+    Check for unreachable code, missing return statements, and other control flow issues.
+  </Step>
+</Steps>
+
+## Scope analysis and symbol resolution
+
+Scope analysis determines which declarations are visible at each point in the program and resolves variable references to their declarations.
+
+### Scope types
+
+<Tabs>
+  <Tab title="Global scope">
+    The outermost scope containing global variables and functions. Accessible from anywhere in the program.
+    
+    ```javascript
+    // Global scope
+    const globalVar = 42;
+    
+    function globalFunction() {
+        return globalVar; // Can access global scope
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Function scope">
+    Variables declared with `var` are function-scoped. They are visible throughout the entire function.
+    
+    ```javascript
+    function example() {
+        if (true) {
+            var x = 10; // Function-scoped
+        }
+        console.log(x); // 10 - accessible outside if block
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Block scope">
+    Variables declared with `let` and `const` are block-scoped. They are only visible within their block.
+    
+    ```javascript
+    function example() {
+        if (true) {
+            let x = 10;   // Block-scoped
+            const y = 20; // Block-scoped
+        }
+        console.log(x); // ReferenceError
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Lexical scope">
+    Inner functions have access to variables in outer scopes through lexical scoping.
+    
+    ```javascript
+    function outer() {
+        const x = 10;
+        
+        function inner() {
+            console.log(x); // Can access outer scope
+        }
+        
+        return inner;
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Symbol table implementation
+
+A symbol table tracks variable declarations and their scopes:
+
+<CodeGroup>
+```cpp Symbol table
+class SymbolTable {
+private:
+    struct Symbol {
+        std::string name;
+        enum class Kind { Variable, Function, Parameter };
+        Kind kind;
+        int scopeLevel;
+    };
+    
+    std::vector<std::unordered_map<std::string, Symbol>> scopes;
+    int currentLevel = 0;
+    
+public:
+    void enterScope() {
+        scopes.push_back({});
+        currentLevel++;
+    }
+    
+    void exitScope() {
+        scopes.pop_back();
+        currentLevel--;
+    }
+    
+    void define(const std::string& name, Symbol::Kind kind) {
+        Symbol sym{name, kind, currentLevel};
+        scopes.back()[name] = sym;
+    }
+    
+    Symbol* resolve(const std::string& name) {
+        // Search from innermost to outermost scope
+        for (auto it = scopes.rbegin(); it != scopes.rend(); ++it) {
+            auto found = it->find(name);
+            if (found != it->end()) {
+                return &found->second;
+            }
+        }
+        return nullptr; // Undefined variable
+    }
+};
+```
+
+```cpp Scope analyzer
+class ScopeAnalyzer : public ASTVisitor {
+private:
+    SymbolTable symbolTable;
+    std::vector<std::string> errors;
+    
+public:
+    void visit(FunctionDeclaration& node) override {
+        // Define function in current scope
+        symbolTable.define(node.name, Symbol::Kind::Function);
+        
+        // Enter function scope
+        symbolTable.enterScope();
+        
+        // Define parameters
+        for (const auto& param : node.parameters) {
+            symbolTable.define(param, Symbol::Kind::Parameter);
+        }
+        
+        // Visit body
+        node.body->accept(*this);
+        
+        // Exit function scope
+        symbolTable.exitScope();
+    }
+    
+    void visit(Identifier& node) override {
+        // Resolve identifier
+        Symbol* sym = symbolTable.resolve(node.name);
+        if (!sym) {
+            errors.push_back("Undefined variable: " + node.name);
+        }
+    }
+};
+```
+</CodeGroup>
+
+<Info>
+Scope analysis must handle hoisting for `var` declarations and functions, while maintaining temporal dead zones for `let` and `const`.
+</Info>
+
+### Variable hoisting
+
+JavaScript's hoisting behavior must be correctly implemented:
+
+```javascript
+// This code:
+console.log(x); // undefined (not ReferenceError)
+var x = 5;
+
+// Is interpreted as:
+var x; // Hoisted to top
+console.log(x);
+x = 5;
+
+// But let/const have temporal dead zone:
+console.log(y); // ReferenceError
+let y = 5;
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Bytecode and VM" icon="microchip" href="/js-engine/bytecode-vm">
+    Learn how to compile AST to bytecode and execute it in a stack-based virtual machine
+  </Card>
+  
+  <Card title="Closures and prototypes" icon="link" href="/js-engine/closures-prototypes">
+    Implement closures with environment chains and prototype-based inheritance
+  </Card>
+</CardGroup>

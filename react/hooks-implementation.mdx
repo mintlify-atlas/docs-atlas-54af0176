@@ -1,0 +1,420 @@
+---
+title: Hooks implementation
+description: Deep dive into React's hooks implementation including the hooks queue, useEffect dependency checking, useRef, and memoization hooks
+---
+
+React hooks are implemented using a queue data structure on each Fiber node. Understanding this implementation reveals why the Rules of Hooks exist and how React tracks state across renders.
+
+## Hooks queue and cursor
+
+Each function component has a hooks queue stored on its Fiber node. This queue maintains all hooks called during rendering in a strict order.
+
+<Info>
+  The hooks queue is a linked list where each node represents a hook call. React uses a cursor to traverse this list during each render.
+</Info>
+
+### How the queue works
+
+<Steps>
+  <Step title="First render">
+    When a component renders for the first time, React creates a new hook node for each hook call and appends it to the queue.
+  </Step>
+  
+  <Step title="Subsequent renders">
+    On re-renders, React resets the cursor to the beginning of the queue and walks through it, matching each hook call to its corresponding node.
+  </Step>
+  
+  <Step title="State retrieval">
+    When a hook is called, React uses the cursor to find the hook node, retrieves its state, and advances the cursor to the next node.
+  </Step>
+  
+  <Step title="Updates">
+    When state is updated (e.g., via `setState`), React stores the new value in the hook node and schedules a re-render.
+  </Step>
+</Steps>
+
+<Tabs>
+  <Tab title="Hook node structure">
+    Each hook node in the queue contains:
+    - `memoizedState`: The current state value
+    - `baseState`: The base state before updates
+    - `queue`: Pending updates for this hook
+    - `baseQueue`: Updates that weren't processed
+    - `next`: Pointer to the next hook node
+  </Tab>
+  
+  <Tab title="Why order matters">
+    Since React matches hooks by position in the queue, calling hooks conditionally or in loops breaks the correspondence between hook calls and hook nodes. This is why the Rules of Hooks require hooks to be called in the same order every render.
+  </Tab>
+</Tabs>
+
+### The cursor pattern
+
+React maintains a global cursor that points to the current hook being processed:
+
+```javascript
+// Simplified implementation
+let currentlyRenderingFiber = null;
+let currentHook = null;
+let workInProgressHook = null;
+
+function renderWithHooks(fiber, Component, props) {
+  currentlyRenderingFiber = fiber;
+  currentHook = fiber.memoizedState; // Reset cursor to start
+  
+  const children = Component(props);
+  
+  currentlyRenderingFiber = null;
+  currentHook = null;
+  return children;
+}
+
+function useState(initialState) {
+  // Move cursor to next hook node
+  const hook = currentHook;
+  currentHook = currentHook.next;
+  
+  return [hook.memoizedState, hook.dispatch];
+}
+```
+
+<Info>
+  This cursor-based approach is why you'll see errors like "Rendered more hooks than during the previous render" - React detected a mismatch between the queue and the hook calls.
+</Info>
+
+## useEffect cleanup and dependency checking
+
+The `useEffect` hook is implemented with a sophisticated system for tracking dependencies, scheduling effects, and managing cleanup functions.
+
+### Dependency checking
+
+React compares dependencies using `Object.is` (shallow equality) to determine if an effect should run.
+
+<Steps>
+  <Step title="Store dependencies">
+    On the first render, React stores the dependency array in the hook node.
+  </Step>
+  
+  <Step title="Compare on re-render">
+    On subsequent renders, React compares each new dependency with its corresponding previous dependency using `Object.is`.
+  </Step>
+  
+  <Step title="Mark for execution">
+    If any dependency changed (or if no dependency array is provided), React marks the effect to run during the commit phase.
+  </Step>
+  
+  <Step title="Schedule effect">
+    Effects marked for execution are added to the Fiber's effect list and scheduled to run after the paint.
+  </Step>
+</Steps>
+
+<Tabs>
+  <Tab title="No dependencies">
+    ```javascript
+    useEffect(() => {
+      // Runs after every render
+    });
+    ```
+    Without a dependency array, the effect runs after every render.
+  </Tab>
+  
+  <Tab title="Empty dependencies">
+    ```javascript
+    useEffect(() => {
+      // Runs only once after mount
+    }, []);
+    ```
+    With an empty array, the effect only runs once because the dependencies never change.
+  </Tab>
+  
+  <Tab title="With dependencies">
+    ```javascript
+    useEffect(() => {
+      // Runs when count changes
+    }, [count]);
+    ```
+    The effect runs when any dependency in the array changes.
+  </Tab>
+</Tabs>
+
+### Cleanup function lifecycle
+
+When an effect returns a cleanup function, React manages its execution carefully:
+
+<Steps>
+  <Step title="Store cleanup">
+    When an effect runs, React stores its cleanup function in the hook node.
+  </Step>
+  
+  <Step title="Run before next effect">
+    Before running the effect again (if dependencies changed), React calls the previous cleanup function.
+  </Step>
+  
+  <Step title="Run on unmount">
+    When the component unmounts, React calls all cleanup functions during the commit phase.
+  </Step>
+</Steps>
+
+<Info>
+  Cleanup functions run synchronously during the commit phase, before the next effect runs. This ensures proper cleanup ordering and prevents memory leaks.
+</Info>
+
+```javascript
+// Simplified implementation
+function commitHookEffectListUnmount(effect) {
+  const destroy = effect.destroy;
+  if (destroy !== undefined) {
+    destroy(); // Call cleanup
+  }
+}
+
+function commitHookEffectListMount(effect) {
+  const create = effect.create;
+  effect.destroy = create(); // Call effect and store new cleanup
+}
+```
+
+### Effect timing
+
+<Tabs>
+  <Tab title="useEffect">
+    - Runs **asynchronously** after the paint
+    - Does not block the browser from updating the screen
+    - Scheduled using `requestIdleCallback` or `setTimeout`
+    - Best for most side effects (data fetching, subscriptions)
+  </Tab>
+  
+  <Tab title="useLayoutEffect">
+    - Runs **synchronously** after DOM mutations but before paint
+    - Blocks the browser from painting
+    - Runs in the commit phase before `useEffect`
+    - Use for DOM measurements or synchronous DOM updates
+  </Tab>
+</Tabs>
+
+## useRef mutable container
+
+The `useRef` hook provides a mutable container that persists across renders without causing re-renders when mutated.
+
+<Info>
+  Unlike state, updating a ref's `current` property does not trigger a re-render. The ref object itself remains the same across all renders.
+</Info>
+
+### Implementation details
+
+`useRef` is implemented as a simple object with a `current` property:
+
+```javascript
+// Simplified implementation
+function useRef(initialValue) {
+  const hook = mountWorkInProgressHook();
+  
+  if (hook.memoizedState === null) {
+    const ref = { current: initialValue };
+    hook.memoizedState = ref;
+  }
+  
+  return hook.memoizedState;
+}
+```
+
+<Steps>
+  <Step title="Create ref object">
+    On the first render, React creates an object with a `current` property set to the initial value.
+  </Step>
+  
+  <Step title="Store in hook node">
+    The ref object is stored in the hook node's `memoizedState`.
+  </Step>
+  
+  <Step title="Return same object">
+    On every re-render, React returns the exact same ref object from the hook node.
+  </Step>
+  
+  <Step title="Mutations don't re-render">
+    Mutating `ref.current` doesn't update the hook node or schedule a re-render.
+  </Step>
+</Steps>
+
+### Common use cases
+
+<Tabs>
+  <Tab title="DOM references">
+    ```javascript
+    const inputRef = useRef(null);
+    
+    useEffect(() => {
+      inputRef.current.focus();
+    }, []);
+    
+    return <input ref={inputRef} />;
+    ```
+    Access DOM nodes directly without causing re-renders.
+  </Tab>
+  
+  <Tab title="Previous values">
+    ```javascript
+    const prevCountRef = useRef();
+    
+    useEffect(() => {
+      prevCountRef.current = count;
+    });
+    
+    // prevCountRef.current is the previous count
+    ```
+    Store values from previous renders without triggering updates.
+  </Tab>
+  
+  <Tab title="Mutable values">
+    ```javascript
+    const timerRef = useRef();
+    
+    const startTimer = () => {
+      timerRef.current = setInterval(...);
+    };
+    
+    const stopTimer = () => {
+      clearInterval(timerRef.current);
+    };
+    ```
+    Store mutable values that don't need to trigger re-renders.
+  </Tab>
+</Tabs>
+
+## useCallback and useMemo memoization
+
+The memoization hooks `useCallback` and `useMemo` prevent expensive recalculations by caching results based on dependencies.
+
+### useCallback
+
+`useCallback` returns a memoized version of a callback function that only changes when dependencies change.
+
+```javascript
+// Simplified implementation
+function useCallback(callback, deps) {
+  const hook = mountWorkInProgressHook();
+  const prevDeps = hook.memoizedState?.[1];
+  
+  if (prevDeps !== null && areHookInputsEqual(deps, prevDeps)) {
+    // Dependencies haven't changed, return cached callback
+    return hook.memoizedState[0];
+  }
+  
+  // Dependencies changed, cache new callback
+  hook.memoizedState = [callback, deps];
+  return callback;
+}
+```
+
+<Steps>
+  <Step title="Store callback and deps">
+    On the first render, React stores both the callback and dependencies in the hook node.
+  </Step>
+  
+  <Step title="Compare dependencies">
+    On re-renders, React compares the new dependencies with the cached dependencies.
+  </Step>
+  
+  <Step title="Return cached or new">
+    If dependencies haven't changed, return the cached callback. Otherwise, cache and return the new callback.
+  </Step>
+</Steps>
+
+<Info>
+  `useCallback` is particularly useful for preventing child components from re-rendering when passed as props, especially with `React.memo`.
+</Info>
+
+### useMemo
+
+`useMemo` memoizes the result of an expensive computation:
+
+```javascript
+// Simplified implementation
+function useMemo(compute, deps) {
+  const hook = mountWorkInProgressHook();
+  const prevDeps = hook.memoizedState?.[1];
+  
+  if (prevDeps !== null && areHookInputsEqual(deps, prevDeps)) {
+    // Dependencies haven't changed, return cached value
+    return hook.memoizedState[0];
+  }
+  
+  // Dependencies changed, recompute and cache
+  const value = compute();
+  hook.memoizedState = [value, deps];
+  return value;
+}
+```
+
+<Tabs>
+  <Tab title="useCallback">
+    ```javascript
+    const handleClick = useCallback(() => {
+      console.log(count);
+    }, [count]);
+    ```
+    Memoizes the **function itself**. Equivalent to `useMemo(() => fn, deps)`.
+  </Tab>
+  
+  <Tab title="useMemo">
+    ```javascript
+    const expensiveValue = useMemo(() => {
+      return computeExpensiveValue(a, b);
+    }, [a, b]);
+    ```
+    Memoizes the **result of calling** the function. The function runs and its return value is cached.
+  </Tab>
+</Tabs>
+
+### When to use memoization
+
+<Steps>
+  <Step title="Expensive computations">
+    Use `useMemo` for computations that take significant time and are called frequently with the same inputs.
+  </Step>
+  
+  <Step title="Referential equality">
+    Use `useCallback` and `useMemo` when passing objects or functions as dependencies to other hooks, or as props to memoized child components.
+  </Step>
+  
+  <Step title="Avoid premature optimization">
+    Don't use memoization everywhere. It adds memory overhead and complexity. Profile first, then optimize.
+  </Step>
+</Steps>
+
+<Info>
+  Remember: memoization trades memory for computation time. The cached values and functions must be stored, and the dependency comparison itself has a cost.
+</Info>
+
+## Custom hook composition
+
+Custom hooks allow you to compose built-in hooks into reusable logic. They follow the same implementation rules as built-in hooks.
+
+```javascript
+function useLocalStorage(key, initialValue) {
+  // All built-in hooks are called in the same order every render
+  const [storedValue, setStoredValue] = useState(() => {
+    try {
+      const item = window.localStorage.getItem(key);
+      return item ? JSON.parse(item) : initialValue;
+    } catch (error) {
+      return initialValue;
+    }
+  });
+  
+  const setValue = useCallback((value) => {
+    try {
+      setStoredValue(value);
+      window.localStorage.setItem(key, JSON.stringify(value));
+    } catch (error) {
+      console.error(error);
+    }
+  }, [key]);
+  
+  return [storedValue, setValue];
+}
+```
+
+<Info>
+  Custom hooks must start with "use" so React's linter can verify that Rules of Hooks are followed. Under the hood, they're just functions that call other hooks.
+</Info>

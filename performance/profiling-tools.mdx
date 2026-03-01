@@ -1,0 +1,415 @@
+---
+title: Profiling tools
+description: Master Chrome DevTools Performance tab, React DevTools Profiler, and Lighthouse metrics to identify performance bottlenecks
+---
+
+## Overview
+
+Profiling tools are essential for identifying performance bottlenecks in your applications. This guide covers the most powerful profiling tools available for web development, from browser-native solutions to React-specific profilers.
+
+<Info>
+Effective profiling requires understanding what to measure and when. Always profile in production mode and use real-world conditions for accurate results.
+</Info>
+
+## Chrome DevTools Performance tab
+
+The Chrome DevTools Performance tab provides a comprehensive deep dive into your application's runtime performance.
+
+<Steps>
+  <Step title="Start recording">
+    Open Chrome DevTools (F12), navigate to the Performance tab, and click the record button. Perform the interactions you want to profile, then stop recording.
+  </Step>
+  
+  <Step title="Analyze the flame graph">
+    The flame graph shows function call stacks over time. Wider bars indicate longer execution times. Look for long tasks (yellow blocks) that block the main thread.
+  </Step>
+  
+  <Step title="Identify bottlenecks">
+    Focus on:
+    - Long tasks that exceed 50ms
+    - Layout thrashing (multiple forced reflows)
+    - Expensive JavaScript execution
+    - Rendering and painting bottlenecks
+  </Step>
+  
+  <Step title="Review network activity">
+    Check the network timeline to see how resource loading impacts performance. Look for render-blocking resources and waterfall patterns.
+  </Step>
+</Steps>
+
+<Tip>
+Use the "Bottom-Up" and "Call Tree" tabs to find which functions consume the most time. Sort by "Self Time" to identify the most expensive operations.
+</Tip>
+
+### Key metrics to monitor
+
+<CardGroup cols={2}>
+  <Card title="Main thread activity" icon="microchip">
+    Monitor for long tasks that block user interaction. Tasks over 50ms can cause jank.
+  </Card>
+  
+  <Card title="Frame rate" icon="film">
+    Target 60fps (16.6ms per frame) for smooth animations. Dropped frames indicate performance issues.
+  </Card>
+  
+  <Card title="JavaScript heap" icon="memory">
+    Watch for memory leaks and excessive allocations that trigger frequent garbage collection.
+  </Card>
+  
+  <Card title="Network timing" icon="network-wired">
+    Identify slow resources and optimization opportunities in the loading sequence.
+  </Card>
+</CardGroup>
+
+## React DevTools Profiler
+
+The React DevTools Profiler is specifically designed to measure React component performance and identify unnecessary re-renders.
+
+### Profiling workflow
+
+<Steps>
+  <Step title="Enable profiling">
+    Install the React DevTools browser extension and open the Profiler tab. Click the record button before performing actions.
+  </Step>
+  
+  <Step title="Capture interactions">
+    Perform the user interactions you want to analyze. The profiler records all component renders during this time.
+  </Step>
+  
+  <Step title="Analyze renders">
+    Review the flame graph to see which components rendered and how long each took. Color intensity indicates render duration.
+  </Step>
+  
+  <Step title="Identify unnecessary renders">
+    Look for components that rendered but didn't commit changes. These are optimization opportunities.
+  </Step>
+</Steps>
+
+<Tabs>
+  <Tab title="Flame graph view">
+    Shows the component hierarchy with render durations. Wider bars indicate more time spent rendering.
+    
+    ```
+    Use this view to:
+    - Identify slow components
+    - Understand render cascades
+    - Find expensive subtrees
+    ```
+  </Tab>
+  
+  <Tab title="Ranked view">
+    Lists components sorted by render time, making it easy to find the slowest components.
+    
+    ```
+    Use this view to:
+    - Quickly spot performance outliers
+    - Prioritize optimization targets
+    - Compare component costs
+    ```
+  </Tab>
+  
+  <Tab title="Component view">
+    Shows why a specific component rendered and what props changed.
+    
+    ```
+    Use this view to:
+    - Debug unnecessary renders
+    - Understand prop changes
+    - Verify memoization effectiveness
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+Always profile in production mode. Development mode includes additional checks that significantly impact performance metrics.
+</Warning>
+
+## Lighthouse metrics
+
+Lighthouse provides automated performance auditing with key metrics that reflect user experience.
+
+### Core Web Vitals
+
+<AccordionGroup>
+  <Accordion title="FCP - First Contentful Paint">
+    Measures when the first content appears on screen. Target: under 1.8 seconds.
+    
+    **Optimization strategies:**
+    - Minimize render-blocking resources
+    - Optimize server response time
+    - Use efficient cache policies
+    - Eliminate unnecessary JavaScript
+  </Accordion>
+  
+  <Accordion title="LCP - Largest Contentful Paint">
+    Measures when the largest content element becomes visible. Target: under 2.5 seconds.
+    
+    **Optimization strategies:**
+    - Optimize images and videos
+    - Preload critical resources
+    - Reduce server response time
+    - Use CDN for static assets
+  </Accordion>
+  
+  <Accordion title="TTI - Time to Interactive">
+    Measures when the page becomes fully interactive. Target: under 3.8 seconds.
+    
+    **Optimization strategies:**
+    - Minimize JavaScript execution time
+    - Code split and lazy load
+    - Remove unused code
+    - Optimize third-party scripts
+  </Accordion>
+  
+  <Accordion title="CLS - Cumulative Layout Shift">
+    Measures visual stability and unexpected layout shifts. Target: under 0.1.
+    
+    **Optimization strategies:**
+    - Set explicit dimensions for images and videos
+    - Reserve space for dynamic content
+    - Avoid inserting content above existing content
+    - Use CSS transform instead of layout properties
+  </Accordion>
+  
+  <Accordion title="FID - First Input Delay">
+    Measures interactivity and response time to first user interaction. Target: under 100ms.
+    
+    **Optimization strategies:**
+    - Break up long tasks
+    - Optimize JavaScript execution
+    - Use web workers for heavy computation
+    - Implement code splitting
+  </Accordion>
+</AccordionGroup>
+
+### Running Lighthouse
+
+<Tabs>
+  <Tab title="Chrome DevTools">
+    ```bash
+    # Open Chrome DevTools (F12)
+    # Navigate to Lighthouse tab
+    # Select categories and device type
+    # Click "Analyze page load"
+    ```
+    
+    Best for quick audits during development.
+  </Tab>
+  
+  <Tab title="CLI">
+    ```bash
+    # Install Lighthouse globally
+    npm install -g lighthouse
+    
+    # Run audit
+    lighthouse https://example.com --view
+    
+    # Generate JSON report
+    lighthouse https://example.com --output json --output-path ./report.json
+    ```
+    
+    Best for CI/CD integration and automated testing.
+  </Tab>
+  
+  <Tab title="Node API">
+    ```javascript
+    const lighthouse = require('lighthouse');
+    const chromeLauncher = require('chrome-launcher');
+    
+    async function runAudit(url) {
+      const chrome = await chromeLauncher.launch({chromeFlags: ['--headless']});
+      const options = {logLevel: 'info', output: 'html', port: chrome.port};
+      const runnerResult = await lighthouse(url, options);
+      
+      console.log('LCP:', runnerResult.lhr.audits['largest-contentful-paint'].numericValue);
+      
+      await chrome.kill();
+    }
+    
+    runAudit('https://example.com');
+    ```
+    
+    Best for custom automation and programmatic analysis.
+  </Tab>
+</Tabs>
+
+## Custom performance marks and measures
+
+The User Timing API allows you to create custom performance measurements for application-specific metrics.
+
+### Basic usage
+
+```javascript
+// Mark the start of an operation
+performance.mark('search-start');
+
+// ... perform search operation ...
+
+// Mark the end of an operation
+performance.mark('search-end');
+
+// Create a measure between marks
+performance.measure('search-duration', 'search-start', 'search-end');
+
+// Get the measurement
+const measure = performance.getEntriesByName('search-duration')[0];
+console.log(`Search took ${measure.duration}ms`);
+```
+
+### Advanced patterns
+
+<CodeGroup>
+```javascript React Component
+import { useEffect } from 'react';
+
+function SearchComponent() {
+  useEffect(() => {
+    performance.mark('search-component-mount');
+    
+    return () => {
+      performance.mark('search-component-unmount');
+      performance.measure(
+        'search-component-lifetime',
+        'search-component-mount',
+        'search-component-unmount'
+      );
+    };
+  }, []);
+  
+  const handleSearch = async (query) => {
+    performance.mark('search-query-start');
+    
+    const results = await fetchResults(query);
+    
+    performance.mark('search-query-end');
+    performance.measure('search-query', 'search-query-start', 'search-query-end');
+    
+    return results;
+  };
+  
+  return <SearchUI onSearch={handleSearch} />;
+}
+```
+
+```javascript Performance Observer
+// Monitor all custom measurements
+const observer = new PerformanceObserver((list) => {
+  for (const entry of list.getEntries()) {
+    console.log(`${entry.name}: ${entry.duration}ms`);
+    
+    // Send to analytics
+    analytics.track('performance-measure', {
+      name: entry.name,
+      duration: entry.duration
+    });
+  }
+});
+
+observer.observe({ entryTypes: ['measure'] });
+```
+
+```javascript Utility Function
+function measureAsync(name, fn) {
+  return async (...args) => {
+    const startMark = `${name}-start-${Date.now()}`;
+    const endMark = `${name}-end-${Date.now()}`;
+    
+    performance.mark(startMark);
+    
+    try {
+      const result = await fn(...args);
+      performance.mark(endMark);
+      performance.measure(name, startMark, endMark);
+      return result;
+    } catch (error) {
+      performance.mark(endMark);
+      performance.measure(`${name}-error`, startMark, endMark);
+      throw error;
+    }
+  };
+}
+
+// Usage
+const fetchData = measureAsync('api-fetch', async (url) => {
+  const response = await fetch(url);
+  return response.json();
+});
+```
+</CodeGroup>
+
+## Heap snapshots and allocation timelines
+
+Memory profiling helps identify memory leaks and optimize memory usage.
+
+### Taking heap snapshots
+
+<Steps>
+  <Step title="Open Memory profiler">
+    In Chrome DevTools, navigate to the Memory tab and select "Heap snapshot".
+  </Step>
+  
+  <Step title="Take baseline snapshot">
+    Capture a snapshot in the initial state of your application.
+  </Step>
+  
+  <Step title="Perform actions">
+    Interact with your application, then take another snapshot.
+  </Step>
+  
+  <Step title="Compare snapshots">
+    Use the comparison view to see what objects were allocated and retained between snapshots.
+  </Step>
+</Steps>
+
+### Analyzing allocation timelines
+
+```javascript
+// Example: Detecting memory leaks
+class DataStore {
+  constructor() {
+    this.cache = new Map();
+    this.listeners = []; // Potential leak if not cleaned up
+  }
+  
+  subscribe(callback) {
+    this.listeners.push(callback);
+    
+    // Return cleanup function
+    return () => {
+      const index = this.listeners.indexOf(callback);
+      if (index > -1) {
+        this.listeners.splice(index, 1);
+      }
+    };
+  }
+  
+  clear() {
+    this.cache.clear();
+    this.listeners = [];
+  }
+}
+```
+
+<Card title="Common memory leak patterns" icon="bug">
+  - Event listeners not removed
+  - Closures holding references
+  - Detached DOM nodes
+  - Growing caches without limits
+  - Timers not cleared
+</Card>
+
+<Tip>
+Use the "Allocation instrumentation on timeline" to see exactly when and where allocations happen during a profiling session.
+</Tip>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Optimization techniques" icon="gauge-high" href="/performance/optimization-techniques">
+    Learn strategies to improve performance after identifying bottlenecks
+  </Card>
+  
+  <Card title="Critical rendering path" icon="route" href="/performance/critical-rendering-path">
+    Optimize resource loading and rendering for faster initial page loads
+  </Card>
+</CardGroup>

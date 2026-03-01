@@ -1,0 +1,344 @@
+---
+title: TLS handshake and WebSocket protocol
+description: Understand TLS encryption, certificate validation, and WebSocket upgrade for real-time communication
+---
+
+## Introduction
+
+Secure communication and real-time bidirectional data transfer are essential for modern web applications. TLS (Transport Layer Security) provides encryption and authentication, while WebSockets enable low-latency, full-duplex communication.
+
+<Info>
+This is part of Week 1 – Networking from Scratch in the "From CPU to the Browser" course.
+</Info>
+
+## TLS basics
+
+TLS is a cryptographic protocol that provides secure communication over networks. It operates above TCP and below application protocols like HTTP.
+
+### TLS handshake overview
+
+The TLS handshake establishes a secure connection before any application data is transmitted.
+
+<Steps>
+  <Step title="Client Hello">
+    The client initiates the handshake by sending a Client Hello message containing:
+    - Supported TLS versions
+    - Supported cipher suites (encryption algorithms)
+    - Random data for key generation
+    - Supported compression methods
+    - Server Name Indication (SNI)
+  </Step>
+
+  <Step title="Server Hello">
+    The server responds with:
+    - Selected TLS version
+    - Selected cipher suite
+    - Random data for key generation
+    - Session ID (for session resumption)
+  </Step>
+
+  <Step title="Certificate exchange">
+    The server sends its digital certificate containing:
+    - Server's public key
+    - Certificate issuer information
+    - Validity period
+    - Domain name(s) the certificate covers
+
+    Optionally, the server may request a client certificate for mutual TLS (mTLS).
+  </Step>
+
+  <Step title="Server Hello Done">
+    The server signals it has finished sending handshake messages.
+  </Step>
+
+  <Step title="Key exchange">
+    The client:
+    - Verifies the server certificate
+    - Generates a pre-master secret
+    - Encrypts it with the server's public key
+    - Sends it to the server
+
+    Both client and server now derive the same symmetric session keys from the pre-master secret and random values.
+  </Step>
+
+  <Step title="Change Cipher Spec">
+    Both client and server send Change Cipher Spec messages to activate the newly negotiated encryption.
+  </Step>
+
+  <Step title="Finished messages">
+    Both sides send encrypted Finished messages to verify the handshake completed successfully. Application data can now be transmitted securely.
+  </Step>
+</Steps>
+
+<Info>
+Modern TLS 1.3 simplifies the handshake to 1-RTT (one round-trip time) compared to 2-RTT in TLS 1.2, improving performance.
+</Info>
+
+### Certificate verification
+
+Verifying the server's certificate is crucial to prevent man-in-the-middle attacks.
+
+<Steps>
+  <Step title="Check certificate validity period">
+    Ensure the current date/time falls within the certificate's valid date range (notBefore to notAfter).
+  </Step>
+
+  <Step title="Verify domain name">
+    Check that the certificate's Subject Alternative Name (SAN) or Common Name (CN) matches the domain being accessed.
+  </Step>
+
+  <Step title="Validate certificate chain">
+    Verify the certificate chain up to a trusted root Certificate Authority (CA):
+    - Check each certificate's signature using its issuer's public key
+    - Ensure none of the certificates have been revoked
+    - Verify the chain leads to a trusted root CA
+  </Step>
+
+  <Step title="Check revocation status">
+    Verify the certificate hasn't been revoked using:
+    - Certificate Revocation Lists (CRL)
+    - Online Certificate Status Protocol (OCSP)
+    - OCSP Stapling (server provides OCSP response)
+  </Step>
+</Steps>
+
+<Warning>
+Failing to properly validate certificates opens your application to man-in-the-middle attacks. Never disable certificate validation in production.
+</Warning>
+
+### Cipher suites
+
+A cipher suite defines the algorithms used for:
+- Key exchange (e.g., RSA, ECDHE)
+- Authentication (e.g., RSA, ECDSA)
+- Encryption (e.g., AES, ChaCha20)
+- Message authentication (e.g., SHA256, SHA384)
+
+<Tip>
+Prefer cipher suites with Perfect Forward Secrecy (PFS) like ECDHE, which ensures past sessions remain secure even if the server's private key is compromised.
+</Tip>
+
+## WebSocket basics
+
+WebSockets provide full-duplex communication channels over a single TCP connection, enabling real-time bidirectional data flow.
+
+### WebSocket upgrade handshake
+
+WebSockets start as an HTTP connection and upgrade to the WebSocket protocol.
+
+<Steps>
+  <Step title="Client sends upgrade request">
+    The client initiates the WebSocket connection with an HTTP upgrade request:
+
+    <CodeGroup>
+    ```text Client Request
+    GET /chat HTTP/1.1
+    Host: example.com
+    Upgrade: websocket
+    Connection: Upgrade
+    Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==
+    Sec-WebSocket-Version: 13
+    ```
+    </CodeGroup>
+
+    **Key headers:**
+    - `Upgrade: websocket` - Requests protocol upgrade
+    - `Connection: Upgrade` - Indicates connection upgrade
+    - `Sec-WebSocket-Key` - Random base64-encoded value for security
+    - `Sec-WebSocket-Version` - WebSocket protocol version (13 is current)
+  </Step>
+
+  <Step title="Server accepts upgrade">
+    If the server supports WebSockets, it responds with:
+
+    <CodeGroup>
+    ```text Server Response
+    HTTP/1.1 101 Switching Protocols
+    Upgrade: websocket
+    Connection: Upgrade
+    Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
+    ```
+    </CodeGroup>
+
+    **Sec-WebSocket-Accept calculation:**
+    - Concatenate the client's Sec-WebSocket-Key with the magic string "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+    - Compute SHA-1 hash of the result
+    - Base64 encode the hash
+
+    This proves the server understands the WebSocket protocol.
+  </Step>
+
+  <Step title="Connection established">
+    After receiving the 101 response, the WebSocket connection is established. The same TCP connection is now used for bidirectional message exchange.
+  </Step>
+</Steps>
+
+<Info>
+The Sec-WebSocket-Key/Accept mechanism prevents non-WebSocket servers from accidentally accepting WebSocket connections.
+</Info>
+
+### WebSocket frame handling
+
+Once the connection is established, data is transmitted in frames.
+
+#### Frame structure
+
+Each WebSocket frame has this binary structure:
+
+```
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-------+-+-------------+-------------------------------+
+|F|R|R|R| opcode|M| Payload len |    Extended payload length    |
+|I|S|S|S|  (4)  |A|     (7)     |             (16/64)           |
+|N|V|V|V|       |S|             |   (if payload len==126/127)   |
+| |1|2|3|       |K|             |                               |
++-+-+-+-+-------+-+-------------+ - - - - - - - - - - - - - - - +
+|     Extended payload length continued, if payload len == 127  |
++ - - - - - - - - - - - - - - - +-------------------------------+
+|                               |Masking-key, if MASK set to 1  |
++-------------------------------+-------------------------------+
+| Masking-key (continued)       |          Payload Data         |
++-------------------------------- - - - - - - - - - - - - - - - +
+:                     Payload Data continued ...                :
++ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - +
+|                     Payload Data continued ...                |
++---------------------------------------------------------------+
+```
+
+#### Frame components
+
+<AccordionGroup>
+  <Accordion title="FIN bit">
+    Indicates if this is the final fragment of a message. For unfragmented messages, this is always 1.
+  </Accordion>
+
+  <Accordion title="Opcode (4 bits)">
+    Defines frame type:
+    - `0x0` - Continuation frame
+    - `0x1` - Text frame (UTF-8 data)
+    - `0x2` - Binary frame
+    - `0x8` - Connection close
+    - `0x9` - Ping
+    - `0xA` - Pong
+  </Accordion>
+
+  <Accordion title="MASK bit">
+    Indicates if the payload is masked. Client-to-server frames MUST be masked. Server-to-client frames MUST NOT be masked.
+  </Accordion>
+
+  <Accordion title="Payload length">
+    - If 0-125: Actual payload length
+    - If 126: Next 2 bytes contain the length
+    - If 127: Next 8 bytes contain the length
+  </Accordion>
+
+  <Accordion title="Masking key">
+    If MASK bit is set, a 4-byte masking key is used to XOR the payload data for security.
+  </Accordion>
+</AccordionGroup>
+
+### Simple frame handling
+
+<Steps>
+  <Step title="Read frame header">
+    Parse the first 2 bytes to get FIN, opcode, MASK, and initial payload length.
+  </Step>
+
+  <Step title="Read extended length (if needed)">
+    If payload length is 126 or 127, read the extended length bytes.
+  </Step>
+
+  <Step title="Read masking key (if present)">
+    If MASK bit is set, read the 4-byte masking key.
+  </Step>
+
+  <Step title="Read and unmask payload">
+    Read the payload data. If masked, XOR each byte with the corresponding masking key byte:
+    ```
+    unmasked[i] = masked[i] XOR masking_key[i % 4]
+    ```
+  </Step>
+
+  <Step title="Process based on opcode">
+    - Text/Binary: Deliver the message to the application
+    - Ping: Respond with a Pong frame
+    - Pong: Update connection health status
+    - Close: Initiate connection closure
+  </Step>
+</Steps>
+
+<Warning>
+Client frames MUST be masked, and server frames MUST NOT be masked. Violating this requirement will cause the connection to be closed.
+</Warning>
+
+### Connection management
+
+<CardGroup cols={2}>
+  <Card title="Ping/Pong" icon="heart-pulse">
+    Ping frames keep the connection alive and detect broken connections. The receiver must respond with a Pong frame.
+  </Card>
+
+  <Card title="Close handshake" icon="xmark">
+    Either party can initiate closure by sending a Close frame with an optional status code. The other party responds with a Close frame, then both close the TCP connection.
+  </Card>
+</CardGroup>
+
+## Network debugging
+
+Debugging TLS and WebSocket connections:
+
+<CardGroup cols={2}>
+  <Card title="tcpdump" icon="terminal">
+    Capture encrypted TLS traffic (you'll see encrypted data):
+    ```bash
+    tcpdump -i eth0 port 443
+    ```
+  </Card>
+
+  <Card title="Wireshark" icon="key">
+    Decrypt TLS traffic by providing the server's private key or using SSLKEYLOGFILE. View WebSocket frames with protocol dissection.
+  </Card>
+</CardGroup>
+
+<Tip>
+Use browser DevTools Network tab to inspect WebSocket frames, including message timing and content.
+</Tip>
+
+## Common issues
+
+<AccordionGroup>
+  <Accordion title="Certificate errors">
+    - Expired certificates
+    - Hostname mismatch
+    - Untrusted certificate authority
+    - Revoked certificates
+
+    Solution: Ensure certificates are valid, properly configured, and issued by trusted CAs.
+  </Accordion>
+
+  <Accordion title="WebSocket connection failures">
+    - Missing Upgrade headers
+    - Incorrect Sec-WebSocket-Accept calculation
+    - Proxy or firewall blocking WebSocket traffic
+    - Protocol mismatch
+
+    Solution: Verify handshake headers, check network configuration, ensure protocol compatibility.
+  </Accordion>
+
+  <Accordion title="Frame parsing errors">
+    - Incorrect masking
+    - Fragmentation handling issues
+    - Buffer overflows with large payloads
+
+    Solution: Implement proper frame parsing, handle fragmentation correctly, set reasonable message size limits.
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+With networking fundamentals mastered, you're ready to move on to browser engine implementation where these protocols come to life.
+
+<Card title="Browser Engine Implementation" icon="arrow-right">
+  Learn how to build HTML parsers, CSS engines, and layout systems (Weeks 2-3)
+</Card>

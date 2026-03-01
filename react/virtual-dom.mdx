@@ -1,0 +1,69 @@
+---
+title: Virtual DOM
+description: Understanding tree diffing algorithms and complexity optimization from O(n³) to O(n)
+---
+
+The Virtual DOM is a programming concept where a virtual representation of the UI is kept in memory and synced with the real DOM. This process, called reconciliation, is key to React's performance.
+
+## Tree diffing complexity analysis
+
+Traditional tree diff algorithms have a fundamental complexity problem when comparing two trees.
+
+<Info>
+  The classic tree edit distance problem has a time complexity of **O(n³)** where n is the number of nodes. This makes it impractical for real-time UI updates with thousands of elements.
+</Info>
+
+### The O(n³) problem
+
+Comparing two arbitrary trees requires:
+1. Finding all possible ways to transform one tree into another
+2. Calculating the minimum cost across all transformations
+3. Considering insertions, deletions, and moves at every node
+
+This three-nested-loop approach becomes prohibitively expensive for typical UIs with hundreds or thousands of elements.
+
+### Optimizing to O(n)
+
+React's Virtual DOM achieves **O(n)** complexity through strategic heuristics:
+
+<Steps>
+  <Step title="Level-by-level comparison">
+    Instead of comparing across different tree levels, React only compares nodes at the same level. This eliminates one dimension of complexity.
+  </Step>
+  
+  <Step title="Type-based assumptions">
+    Elements of different types produce fundamentally different trees. React doesn't attempt to diff them—it simply replaces the old tree.
+  </Step>
+  
+  <Step title="Key-based reconciliation">
+    Using keys, React can quickly identify which items have changed, been added, or removed without expensive tree comparisons.
+  </Step>
+</Steps>
+
+## Complexity comparison
+
+| Algorithm | Time Complexity | Practical Limit |
+|-----------|----------------|------------------|
+| Traditional tree diff | O(n³) | ~100 nodes |
+| React Virtual DOM | O(n) | 10,000+ nodes |
+
+<Note>
+  The linear complexity of React's diffing algorithm is what makes it practical to re-render entire application trees on every state change while maintaining 60fps performance.
+</Note>
+
+## Implementation considerations
+
+When building a Virtual DOM library, the diffing algorithm must:
+
+- Minimize DOM operations (the most expensive part)
+- Reuse existing DOM nodes whenever possible
+- Batch updates to avoid layout thrashing
+- Maintain a lightweight in-memory representation
+
+<Info>
+  In the Week 6 project, you'll implement a Virtual DOM library with optimized reconciliation and stress test it with 10,000+ dynamic nodes while profiling layout and paint timings.
+</Info>
+
+## Next steps
+
+Understanding the complexity optimization is just the first step. The next crucial piece is implementing the heuristics that make O(n) diffing possible—particularly key-based reconciliation and type-based assumptions.

@@ -1,0 +1,203 @@
+---
+title: Server-side rendering fundamentals
+description: Learn the core concepts of server-side rendering in React, including renderToString, renderToPipeableStream, progressive hydration, and selective hydration techniques.
+---
+
+## Overview
+
+Server-side rendering (SSR) is a technique for rendering React components on the server and sending fully formed HTML to the client. This approach improves initial page load performance and SEO while enabling progressive enhancement strategies.
+
+<Info>
+SSR shifts the rendering work from the client to the server, delivering a fully rendered page that users can see immediately while JavaScript loads in the background.
+</Info>
+
+## Rendering methods
+
+React provides two primary methods for server-side rendering, each optimized for different use cases and performance characteristics.
+
+<Tabs>
+  <Tab title="renderToString">
+    ### renderToString
+
+    The traditional synchronous rendering method that generates a complete HTML string before sending any content to the client.
+
+    **Characteristics:**
+    - Synchronous, blocking operation
+    - Waits for entire component tree to render
+    - Returns complete HTML string
+    - Simple to implement and reason about
+
+    **Use cases:**
+    - Small to medium applications
+    - Static content generation
+    - When full HTML is needed before response
+
+    <CodeGroup>
+    ```javascript Node.js
+    import { renderToString } from 'react-dom/server';
+    import App from './App';
+
+    const html = renderToString(<App />);
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+        <body>
+          <div id="root">${html}</div>
+          <script src="/bundle.js"></script>
+        </body>
+      </html>
+    `);
+    ```
+    </CodeGroup>
+
+    <Warning>
+    `renderToString` blocks the server until the entire component tree is rendered, which can cause latency issues for large applications.
+    </Warning>
+  </Tab>
+
+  <Tab title="renderToPipeableStream">
+    ### renderToPipeableStream
+
+    The modern streaming rendering method that sends HTML chunks to the client as they become available.
+
+    **Characteristics:**
+    - Asynchronous, non-blocking operation
+    - Streams HTML chunks progressively
+    - Supports Suspense boundaries
+    - Better Time to First Byte (TTFB)
+
+    **Use cases:**
+    - Large applications with complex component trees
+    - Content with varying load times
+    - When optimizing for perceived performance
+
+    <CodeGroup>
+    ```javascript Node.js
+    import { renderToPipeableStream } from 'react-dom/server';
+    import App from './App';
+
+    const { pipe } = renderToPipeableStream(<App />, {
+      onShellReady() {
+        res.setHeader('Content-Type', 'text/html');
+        pipe(res);
+      },
+      onShellError(error) {
+        res.statusCode = 500;
+        res.send('Server error');
+      },
+      onError(error) {
+        console.error(error);
+      }
+    });
+    ```
+    </CodeGroup>
+
+    <Info>
+    With streaming, users see content faster as the browser can start parsing and rendering HTML before the entire response is complete.
+    </Info>
+  </Tab>
+</Tabs>
+
+## Progressive hydration
+
+Progressive hydration is a technique that allows parts of the page to become interactive at different times, rather than waiting for the entire application to hydrate.
+
+<Steps>
+  <Step title="Initial HTML render">
+    The server sends fully rendered HTML to the client. Users can see the content immediately, even before JavaScript loads.
+  </Step>
+
+  <Step title="Selective script loading">
+    JavaScript bundles are loaded based on priority. Critical components receive their scripts first, while less important parts load later.
+  </Step>
+
+  <Step title="Incremental hydration">
+    As each component's JavaScript arrives, it hydrates independently without blocking other components. Users can interact with hydrated parts while others are still loading.
+  </Step>
+
+  <Step title="Full interactivity">
+    Once all components have hydrated, the application is fully interactive with all client-side functionality available.
+  </Step>
+</Steps>
+
+### Benefits
+
+- **Faster Time to Interactive (TTI)**: Users can interact with critical parts of the page sooner
+- **Better perceived performance**: The page feels responsive even during hydration
+- **Reduced JavaScript blocking**: Heavy components don't block lighter ones from becoming interactive
+- **Optimized resource usage**: JavaScript execution is spread over time
+
+## Selective hydration
+
+Selective hydration builds on progressive hydration by prioritizing which components to hydrate based on user interaction and component importance.
+
+<CodeGroup>
+```jsx React with Suspense
+import { lazy, Suspense } from 'react';
+
+const HeavyComponent = lazy(() => import('./HeavyComponent'));
+
+function App() {
+  return (
+    <div>
+      <Header />
+      <Suspense fallback={<Spinner />}>
+        <HeavyComponent />
+      </Suspense>
+      <Footer />
+    </div>
+  );
+}
+```
+</CodeGroup>
+
+### How it works
+
+<Steps>
+  <Step title="Suspense boundaries">
+    Components wrapped in Suspense boundaries can hydrate independently. The server sends HTML for all components, but JavaScript loads on demand.
+  </Step>
+
+  <Step title="Priority-based hydration">
+    React automatically prioritizes hydration based on user interactions. If a user clicks on a component that hasn't hydrated yet, React fast-tracks its hydration.
+  </Step>
+
+  <Step title="Concurrent rendering">
+    Using React's concurrent features, hydration work can be interrupted and resumed, ensuring the browser remains responsive to user input.
+  </Step>
+</Steps>
+
+<Info>
+**Key insight**: Selective hydration allows React to respond to user interactions even before the entire page has hydrated, creating a more responsive user experience.
+</Info>
+
+## Comparison matrix
+
+| Feature | renderToString | renderToPipeableStream |
+|---------|----------------|------------------------|
+| **Execution** | Synchronous | Asynchronous |
+| **TTFB** | Slower (waits for complete render) | Faster (streams chunks) |
+| **Suspense support** | No | Yes |
+| **Progressive hydration** | Limited | Full support |
+| **Server blocking** | Blocks until complete | Non-blocking |
+| **Use case** | Simple apps, static generation | Complex apps, dynamic content |
+
+## Best practices
+
+<CardGroup cols={2}>
+  <Card title="Use streaming for large apps" icon="water">
+    Prefer `renderToPipeableStream` for applications with complex component trees or varying data load times to improve TTFB.
+  </Card>
+
+  <Card title="Implement Suspense boundaries" icon="layer-group">
+    Wrap heavy components in Suspense to enable selective hydration and prevent them from blocking the entire page.
+  </Card>
+
+  <Card title="Prioritize critical content" icon="star">
+    Ensure above-the-fold content is in the shell that renders first, while deferring below-the-fold content to later chunks.
+  </Card>
+
+  <Card title="Monitor performance metrics" icon="chart-line">
+    Track TTFB, FCP, and TTI to measure the effectiveness of your SSR strategy and identify optimization opportunities.
+  </Card>
+</CardGroup>

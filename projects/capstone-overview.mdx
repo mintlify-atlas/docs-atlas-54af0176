@@ -1,0 +1,171 @@
+---
+title: Capstone project
+description: Build a complete system from CPU to pixels - integrate all seven components of modern frontend engineering
+---
+
+The capstone project is the culmination of your journey through Raw Bits to React. You'll build a production-ready system that integrates every component you've learned, from custom browser engines to React-like frameworks with concurrent rendering.
+
+## What you'll build
+
+This isn't just another portfolio project. You're building a complete, working system that demonstrates mastery of the entire frontend stack - from hardware constraints to production optimization.
+
+<CardGroup cols={2}>
+  <Card title="Browser engine" icon="browser">
+    Custom HTML/CSS/JS parser, layout engine, and rendering pipeline
+  </Card>
+  <Card title="React-like framework" icon="react">
+    Fiber architecture with concurrent features and hooks
+  </Card>
+  <Card title="SSR framework" icon="server">
+    Streaming server-side rendering with progressive hydration
+  </Card>
+  <Card title="Production app" icon="rocket">
+    Optimized Next.js-style application with file-based routing
+  </Card>
+  <Card title="Performance suite" icon="gauge-high">
+    Complete profiling and optimization toolkit
+  </Card>
+  <Card title="WASM acceleration" icon="bolt">
+    WebAssembly modules for critical performance paths
+  </Card>
+  <Card title="Hardware optimization" icon="microchip">
+    Constraint testing and embedded system adaptations
+  </Card>
+</CardGroup>
+
+## The seven components
+
+<Steps>
+  <Step title="Custom browser engine with HTML/CSS/JS support">
+    Build the foundation that powers everything else. Your engine must handle:
+    
+    - HTML tokenization with full state machine (13 states, 67 transitions)
+    - CSS parsing with cascade resolution and specificity calculation
+    - Layout algorithms including flexbox and grid
+    - Paint and composite with GPU acceleration
+    - Full integration with your JavaScript engine
+    
+    This component demonstrates your understanding of **Weeks 2-3: Browser Engine Implementation**.
+  </Step>
+  
+  <Step title="React-like framework with Fiber and concurrent features">
+    Implement a modern rendering framework with:
+    
+    - Fiber reconciler with work loop and priority lanes
+    - Complete hooks implementation (useState, useEffect, useRef, useMemo, useCallback)
+    - Concurrent rendering with time slicing
+    - Suspense and lazy loading
+    - useTransition and useDeferredValue
+    
+    This integrates concepts from **Week 6: Virtual DOM** and **Week 7: React Internals**.
+  </Step>
+  
+  <Step title="SSR framework with streaming and hydration">
+    Build server-side rendering infrastructure:
+    
+    - Stream-based rendering (renderToPipeableStream equivalent)
+    - Progressive hydration for faster interactivity
+    - Selective hydration for prioritized components
+    - Static site generation with incremental regeneration
+    - Edge and Node rendering support
+    
+    This demonstrates mastery of **Week 7: Server-side rendering** concepts.
+  </Step>
+  
+  <Step title="Production-optimized Next.js application">
+    Create a real application that showcases:
+    
+    - File-based routing system
+    - Automatic code splitting and bundle optimization
+    - Image and font optimization
+    - API routes and middleware
+    - Full SEO and meta tag management
+    
+    This applies **Week 7: Next.js architecture** and **Week 8: Performance Engineering**.
+  </Step>
+  
+  <Step title="Full performance profiling suite">
+    Build comprehensive tooling for performance analysis:
+    
+    - Custom performance marks and measures
+    - Lighthouse metrics tracking (FCP, LCP, TTI, CLS, FID)
+    - Real-time profiling for render phases
+    - Memory leak detection and heap analysis
+    - Automated performance regression testing
+    
+    This leverages **Week 8: Profiling tools** and optimization techniques.
+  </Step>
+  
+  <Step title="WebAssembly acceleration for critical paths">
+    Optimize performance-critical operations:
+    
+    - Identify bottlenecks suitable for WASM (image processing, calculations)
+    - Implement WASM modules in C/C++ or Rust
+    - Optimize JS ↔ WASM interop
+    - Measure and document performance gains
+    - Handle linear memory management efficiently
+    
+    This applies **Week 9: WebAssembly integration** skills.
+  </Step>
+  
+  <Step title="Hardware constraint testing and optimization">
+    Test your system under extreme conditions:
+    
+    - Memory-constrained environments (64KB RAM simulation)
+    - CPU throttling (10MHz simulation)
+    - Network constraints (2G, 3G testing)
+    - Embedded system adaptation
+    - Document performance characteristics across all constraints
+    
+    This demonstrates **Week 10: Hardware Simulation** expertise.
+  </Step>
+</Steps>
+
+## Why this matters
+
+<Info>
+  Most engineers treat the browser as a black box. You'll understand every layer, from how the CPU executes instructions to how pixels appear on screen. This depth enables you to debug and optimize at any level of the stack.
+</Info>
+
+### Real-world impact
+
+The capstone project teaches you to:
+
+- **Debug with precision**: When performance degrades, you'll know whether the issue is in parsing, layout, reconciliation, GC, or compositing
+- **Optimize with confidence**: Understanding the full pipeline lets you make informed trade-offs
+- **Build better abstractions**: Knowing how frameworks work internally helps you use them more effectively
+- **Push boundaries**: You'll have the skills to contribute to browser engines, JavaScript engines, and framework core teams
+
+## Time commitment
+
+<Warning>
+  This is an intensive 2-week project requiring 80-100 hours of focused work. Plan accordingly and ensure you have the time to dedicate to building a complete, production-ready system.
+</Warning>
+
+**Weeks 11-12** are dedicated exclusively to integration and polish:
+
+- **Week 11**: Integration and core functionality
+  - Connect all seven components
+  - Ensure end-to-end functionality
+  - Fix integration bugs
+  - Implement error handling
+
+- **Week 12**: Optimization and documentation
+  - Performance tuning across all layers
+  - Edge case handling
+  - Comprehensive testing
+  - Documentation and metrics
+
+## Success criteria
+
+Your capstone project must meet rigorous performance and functionality standards. See the [capstone requirements](/projects/capstone-requirements) for complete specifications.
+
+<Check>
+  By the end of this project, you'll have a production-ready system that demonstrates complete understanding of every layer from CPU to pixels - and the confidence to build or optimize any frontend system.
+</Check>
+
+## Next steps
+
+<Card title="View full requirements" icon="list-check" href="/projects/capstone-requirements">
+  Review detailed requirements, deliverables, and performance benchmarks
+</Card>

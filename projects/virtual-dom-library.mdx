@@ -1,0 +1,173 @@
+---
+title: Virtual DOM library
+description: Build a virtual DOM library with optimized reconciliation that handles 10,000+ dynamic nodes
+---
+
+<Info>
+  This project is part of **Week 6** and focuses on efficient diffing algorithms and rendering optimization.
+</Info>
+
+## Overview
+
+Build a high-performance virtual DOM library with optimized reconciliation algorithms. The library must efficiently handle large-scale DOM updates and minimize browser repaints and reflows.
+
+## Project requirements
+
+<CardGroup cols={2}>
+  <Card title="Scale" icon="chart-simple">
+    Handle 10,000+ dynamic nodes
+  </Card>
+  <Card title="Performance" icon="gauge-high">
+    Optimized reconciliation algorithm
+  </Card>
+  <Card title="Profiling" icon="clock">
+    Measure layout/paint timings
+  </Card>
+  <Card title="Batching" icon="layer-group">
+    Efficient update batching
+  </Card>
+</CardGroup>
+
+## Core components
+
+<Steps>
+  <Step title="Diffing algorithms">
+    Implement efficient tree diffing:
+    
+    - Tree diffing complexity analysis (O(n³) → O(n))
+    - Key-based reconciliation
+    - Heuristics: component type, element type, lists
+    - Fiber architecture preparation
+    
+    The diffing algorithm must reduce complexity from O(n³) to O(n) using intelligent heuristics.
+  </Step>
+  
+  <Step title="Batching and scheduling">
+    Build update batching system:
+    
+    - requestAnimationFrame-based updates
+    - Double buffering for UI consistency
+    - Priority queues for updates
+    - Time slicing for interruptibility
+    
+    Batch multiple updates together and schedule them efficiently to avoid layout thrashing.
+  </Step>
+  
+  <Step title="Repaint/reflow optimization">
+    Optimize browser rendering:
+    
+    - Layout thrashing detection
+    - Read/write batching (FastDOM pattern)
+    - CSS containment and layer creation
+    - Composite-only animations
+    
+    Minimize expensive layout recalculations and repaints for smooth 60fps updates.
+  </Step>
+</Steps>
+
+## Reconciliation algorithm
+
+<Note>
+  The key to performance is reducing tree diffing from O(n³) to O(n) complexity.
+</Note>
+
+### Optimization heuristics
+
+**Component type heuristic**
+Components of different types produce different trees. Replace the entire subtree when component type changes.
+
+**Element type heuristic**
+Elements of different types (e.g., `<div>` vs `<span>`) represent different structures. Replace rather than update.
+
+**Key-based reconciliation**
+Use keys to identify which items have changed, been added, or removed in lists. This enables efficient reordering.
+
+## Performance features
+
+<AccordionGroup>
+  <Accordion title="requestAnimationFrame batching">
+    Batch all updates and apply them in a single requestAnimationFrame callback for smooth 60fps rendering.
+  </Accordion>
+  
+  <Accordion title="Double buffering">
+    Use double buffering to ensure UI consistency - build the new tree completely before committing changes to the DOM.
+  </Accordion>
+  
+  <Accordion title="Priority queues">
+    Implement priority-based update scheduling to handle high-priority updates (user input) before low-priority ones (background updates).
+  </Accordion>
+  
+  <Accordion title="Time slicing">
+    Break large updates into smaller chunks that can be interrupted, preventing UI freezing during heavy computation.
+  </Accordion>
+</AccordionGroup>
+
+## Layout optimization
+
+<CardGroup cols={2}>
+  <Card title="Layout thrashing" icon="triangle-exclamation">
+    Detect and prevent layout thrashing by batching reads and writes.
+  </Card>
+  <Card title="FastDOM pattern" icon="bolt">
+    Separate DOM reads and writes into batched phases.
+  </Card>
+  <Card title="CSS containment" icon="box">
+    Use CSS containment to limit layout scope.
+  </Card>
+  <Card title="Composite-only" icon="layer-group">
+    Optimize animations to use composite-only properties (transform, opacity).
+  </Card>
+</CardGroup>
+
+## Stress testing
+
+<Info>
+  Your library must handle 10,000+ concurrent dynamic nodes with smooth performance.
+</Info>
+
+### Test scenarios
+
+- **Large lists**: Render and update lists with 10,000+ items
+- **Rapid updates**: Handle rapid-fire state changes without frame drops
+- **Complex trees**: Deep component hierarchies with frequent updates
+- **Reordering**: Efficiently handle list reordering with keys
+- **Mixed updates**: Simultaneous additions, removals, and updates
+
+## Profiling requirements
+
+<Steps>
+  <Step title="Layout timing">
+    Measure time spent in layout calculations using Performance API.
+  </Step>
+  <Step title="Paint timing">
+    Track paint operations and identify unnecessary repaints.
+  </Step>
+  <Step title="Reconciliation time">
+    Profile the virtual DOM diffing algorithm performance.
+  </Step>
+  <Step title="Frame rate">
+    Monitor frame rate during stress tests to ensure 60fps.
+  </Step>
+</Steps>
+
+## Deliverables
+
+- Virtual DOM library with complete reconciliation
+- Key-based diffing for efficient list updates
+- Update batching with requestAnimationFrame
+- Priority-based scheduling system
+- Time slicing for interruptible rendering
+- Layout thrashing prevention
+- Stress test passing 10,000+ nodes
+- Performance profiling showing layout/paint timings
+- Benchmark suite comparing against naive implementation
+
+## Success criteria
+
+- Maintain 60fps with 10,000+ dynamic nodes
+- Reconciliation runs in O(n) time
+- No layout thrashing detected in profiling
+- Updates are properly batched and scheduled
+- Key-based lists reorder efficiently
+- Time slicing prevents UI freezing
+- Performance metrics show optimized layout/paint times

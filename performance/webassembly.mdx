@@ -1,0 +1,396 @@
+---
+title: WebAssembly
+description: Compile native code to WASM, manage linear memory, optimize JS/WASM interop, and leverage SIMD and threads for high-performance web applications
+---
+
+WebAssembly (WASM) enables near-native performance on the web by compiling C, C++, or Rust to efficient bytecode. Learn how to build, optimize, and integrate WASM modules into JavaScript applications.
+
+## Compile C/C++/Rust to WASM
+
+Compile native code to WebAssembly using Emscripten, wasm-pack, or other toolchains.
+
+### Compiling C/C++ with Emscripten
+
+<Steps>
+  <Step title="Install Emscripten toolchain">
+    Set up the Emscripten compiler infrastructure:
+    
+    ```bash
+    # Clone and install Emscripten
+    git clone https://github.com/emscripten-core/emsdk.git
+    cd emsdk
+    ./emsdk install latest
+    ./emsdk activate latest
+    source ./emsdk_env.sh
+    ```
+  </Step>
+  
+  <Step title="Write and compile C/C++ code">
+    Create a C function and compile it to WASM:
+    
+    ```c
+    // math_utils.c
+    #include <emscripten.h>
+    
+    EMSCRIPTEN_KEEPALIVE
+    double calculate_intensive(double* data, int length) {
+      double result = 0.0;
+      for (int i = 0; i < length; i++) {
+        result += data[i] * data[i];
+      }
+      return result;
+    }
+    ```
+    
+    Compile with optimization:
+    ```bash
+    emcc math_utils.c -O3 -s WASM=1 -s EXPORTED_FUNCTIONS='["_calculate_intensive"]' \
+      -s EXPORTED_RUNTIME_METHODS='["cwrap","ccall"]' -o math_utils.js
+    ```
+    
+    <Info>
+      The `-O3` flag enables aggressive optimizations. Use `-Os` for size optimization or `-O2` for balanced optimization.
+    </Info>
+  </Step>
+  
+  <Step title="Load and use in JavaScript">
+    Import and call the WASM module from JavaScript:
+    
+    ```javascript
+    import createModule from './math_utils.js';
+    
+    const Module = await createModule();
+    const calculate = Module.cwrap('calculate_intensive', 'number', ['number', 'number']);
+    
+    // Allocate memory and copy data
+    const data = new Float64Array([1, 2, 3, 4, 5]);
+    const ptr = Module._malloc(data.length * 8);
+    Module.HEAPF64.set(data, ptr / 8);
+    
+    const result = calculate(ptr, data.length);
+    Module._free(ptr);
+    ```
+  </Step>
+</Steps>
+
+### Compiling Rust with wasm-pack
+
+<Steps>
+  <Step title="Set up Rust and wasm-pack">
+    Install the Rust toolchain and wasm-pack:
+    
+    ```bash
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+    cargo install wasm-pack
+    ```
+  </Step>
+  
+  <Step title="Create a Rust WASM project">
+    ```bash
+    cargo new --lib wasm-image-processing
+    cd wasm-image-processing
+    ```
+    
+    Update `Cargo.toml`:
+    ```toml
+    [lib]
+    crate-type = ["cdylib"]
+    
+    [dependencies]
+    wasm-bindgen = "0.2"
+    ```
+    
+    Implement image processing in `src/lib.rs`:
+    ```rust
+    use wasm_bindgen::prelude::*;
+    
+    #[wasm_bindgen]
+    pub fn apply_filter(data: &mut [u8], width: u32, height: u32) {
+        for y in 1..height-1 {
+            for x in 1..width-1 {
+                let idx = ((y * width + x) * 4) as usize;
+                // Apply convolution filter
+                data[idx] = /* filter calculation */;
+            }
+        }
+    }
+    ```
+  </Step>
+  
+  <Step title="Build and integrate">
+    ```bash
+    wasm-pack build --target web
+    ```
+    
+    Use in JavaScript:
+    ```javascript
+    import init, { apply_filter } from './pkg/wasm_image_processing.js';
+    
+    await init();
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    apply_filter(imageData.data, canvas.width, canvas.height);
+    ctx.putImageData(imageData, 0, 0);
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  Rust's wasm-bindgen provides safer memory management than raw Emscripten, but adds slight overhead. Choose based on your safety vs. performance requirements.
+</Warning>
+
+## Linear memory management
+
+WebAssembly uses a contiguous linear memory space that must be carefully managed.
+
+### Memory model
+
+- WASM memory is a resizable ArrayBuffer
+- Accessed as typed arrays (HEAP8, HEAP32, HEAPF64)
+- Growth is in 64KB pages (WebAssembly.Memory.grow())
+- No automatic garbage collection
+
+### Manual memory management
+
+<Steps>
+  <Step title="Allocate memory">
+    ```javascript
+    // From JavaScript side
+    const ptr = Module._malloc(1024); // Allocate 1KB
+    const buffer = new Uint8Array(Module.HEAPU8.buffer, ptr, 1024);
+    ```
+  </Step>
+  
+  <Step title="Copy data between JS and WASM">
+    ```javascript
+    // JS -> WASM
+    const data = new Float32Array([1, 2, 3, 4]);
+    const ptr = Module._malloc(data.length * 4);
+    Module.HEAPF32.set(data, ptr / 4);
+    
+    // WASM -> JS
+    const result = new Float32Array(
+      Module.HEAPF32.buffer,
+      resultPtr,
+      resultLength
+    );
+    ```
+  </Step>
+  
+  <Step title="Free memory">
+    ```javascript
+    Module._free(ptr);
+    ```
+    
+    <Warning>
+      Forgetting to free WASM memory causes leaks. WASM memory is not managed by JavaScript's garbage collector.
+    </Warning>
+  </Step>
+</Steps>
+
+### Growing memory
+
+```javascript
+// Initialize with 1MB (16 pages)
+const memory = new WebAssembly.Memory({ initial: 16 });
+
+// Grow by 10 pages (640KB)
+const previousPages = memory.grow(10);
+```
+
+<Note>
+  Memory growth invalidates existing TypedArray views. Recreate views after growing memory.
+</Note>
+
+## JS ↔ WASM interop optimization
+
+Minimize overhead when crossing the JavaScript/WebAssembly boundary.
+
+### Minimize boundary crossings
+
+<Steps>
+  <Step title="Batch operations">
+    Instead of calling WASM for each operation, batch work:
+    
+    ```javascript
+    // Bad: Multiple boundary crossings
+    for (let i = 0; i < 1000; i++) {
+      result[i] = Module.process(data[i]);
+    }
+    
+    // Good: Single boundary crossing
+    const dataPtr = copyToWASM(data);
+    const resultPtr = Module.processBatch(dataPtr, data.length);
+    const result = copyFromWASM(resultPtr, data.length);
+    ```
+  </Step>
+  
+  <Step title="Avoid string passing">
+    String encoding/decoding is expensive. Use numeric codes or pass binary data:
+    
+    ```javascript
+    // Bad: String passing
+    Module.processText("hello world");
+    
+    // Good: Pass as bytes
+    const encoder = new TextEncoder();
+    const bytes = encoder.encode("hello world");
+    const ptr = copyToWASM(bytes);
+    Module.processBytes(ptr, bytes.length);
+    ```
+  </Step>
+  
+  <Step title="Use shared memory for large data">
+    Keep data in WASM memory and pass pointers:
+    
+    ```javascript
+    // Allocate once in WASM
+    const bufferPtr = Module._malloc(BUFFER_SIZE);
+    
+    // Reuse for multiple operations
+    Module.fillBuffer(bufferPtr, sourceData);
+    Module.processBuffer(bufferPtr);
+    Module.transformBuffer(bufferPtr);
+    
+    // Read result
+    const result = new Uint8Array(
+      Module.HEAPU8.buffer,
+      bufferPtr,
+      BUFFER_SIZE
+    );
+    ```
+  </Step>
+</Steps>
+
+### Optimize data transfer
+
+- Use TypedArrays instead of regular arrays
+- Align data to memory boundaries (4-byte, 8-byte)
+- Preallocate buffers and reuse them
+- Consider SharedArrayBuffer for worker threads
+
+<Info>
+  The overhead of JS/WASM calls is typically 5-10ns, but data copying can be much more expensive (1-2 GB/s).
+</Info>
+
+## SIMD and threads
+
+Leverage parallel processing capabilities for maximum performance.
+
+### SIMD (Single Instruction, Multiple Data)
+
+Process multiple data elements in a single instruction:
+
+```c
+#include <wasm_simd128.h>
+
+void add_vectors_simd(float* a, float* b, float* result, int length) {
+  int i;
+  for (i = 0; i <= length - 4; i += 4) {
+    v128_t va = wasm_v128_load(&a[i]);
+    v128_t vb = wasm_v128_load(&b[i]);
+    v128_t vresult = wasm_f32x4_add(va, vb);
+    wasm_v128_store(&result[i], vresult);
+  }
+  
+  // Handle remaining elements
+  for (; i < length; i++) {
+    result[i] = a[i] + b[i];
+  }
+}
+```
+
+<Steps>
+  <Step title="Enable SIMD compilation">
+    ```bash
+    emcc -msimd128 -O3 code.c -o code.wasm
+    ```
+  </Step>
+  
+  <Step title="Verify SIMD support">
+    ```javascript
+    if (!WebAssembly.validate(new Uint8Array([0x00, 0x61, 0x73, 0x6d, ...]))) {
+      console.warn('SIMD not supported, falling back to scalar');
+    }
+    ```
+  </Step>
+  
+  <Step title="Benchmark performance gains">
+    SIMD typically provides 2-4x speedup for vectorizable operations.
+  </Step>
+</Steps>
+
+### Threads and SharedArrayBuffer
+
+Parallelize computation across multiple cores:
+
+```c
+#include <pthread.h>
+#include <emscripten/threading.h>
+
+void* worker_function(void* arg) {
+  // Process chunk of data
+  return NULL;
+}
+
+void parallel_process(float* data, int length) {
+  pthread_t threads[4];
+  for (int i = 0; i < 4; i++) {
+    pthread_create(&threads[i], NULL, worker_function, &data[i * length/4]);
+  }
+  for (int i = 0; i < 4; i++) {
+    pthread_join(threads[i], NULL);
+  }
+}
+```
+
+Compile with threading:
+```bash
+emcc -pthread -s USE_PTHREADS=1 -s PTHREAD_POOL_SIZE=4 code.c -o code.js
+```
+
+<Warning>
+  WebAssembly threads require SharedArrayBuffer, which has strict cross-origin isolation requirements (COOP and COEP headers).
+</Warning>
+
+## Project: Build WASM module for computationally intensive task
+
+<Steps>
+  <Step title="Choose a compute-intensive task">
+    Select a task that benefits from native performance:
+    - Image processing (filters, transformations)
+    - Physics simulation (collision detection, particle systems)
+    - Cryptography (hashing, encryption)
+    - Data compression/decompression
+  </Step>
+  
+  <Step title="Implement in C/C++ or Rust">
+    Write optimized native code with SIMD where applicable.
+  </Step>
+  
+  <Step title="Optimize JS/WASM boundary">
+    Minimize data copying and boundary crossings. Batch operations and use shared memory.
+  </Step>
+  
+  <Step title="Benchmark vs pure JavaScript">
+    Measure performance improvement:
+    ```javascript
+    console.time('JS Implementation');
+    jsImplementation(data);
+    console.timeEnd('JS Implementation');
+    
+    console.time('WASM Implementation');
+    wasmImplementation(data);
+    console.timeEnd('WASM Implementation');
+    ```
+    
+    Target 5-10x speedup for CPU-bound operations.
+  </Step>
+  
+  <Step title="Add threading for multi-core utilization">
+    Parallelize work across available CPU cores for additional speedup.
+  </Step>
+</Steps>
+
+<Note>
+  WebAssembly provides the most benefit for CPU-intensive computations. For I/O-bound or DOM-heavy operations, the overhead may outweigh the benefits.
+</Note>

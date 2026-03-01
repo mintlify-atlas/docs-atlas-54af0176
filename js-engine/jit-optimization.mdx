@@ -1,0 +1,1018 @@
+---
+title: JIT optimization
+description: Explore just-in-time compilation techniques including inline caching, type feedback, speculative optimization, and deoptimization strategies
+---
+
+## Overview
+
+Just-in-time (JIT) compilation transforms JavaScript from interpreted bytecode into optimized machine code at runtime. Modern JavaScript engines use sophisticated profiling and optimization techniques to identify and accelerate hot code paths, achieving near-native performance.
+
+<Info>
+  JIT compilation is optional in engine implementation but critical for production performance. Engines like V8, SpiderMonkey, and JavaScriptCore use multi-tier JIT systems that balance compilation cost with execution speed.
+</Info>
+
+## JIT compilation pipeline
+
+Modern engines use a multi-tier approach that progressively optimizes hot code:
+
+```
+┌─────────────────────────────────────────────────────┐
+│                Source Code                          │
+└──────────────────┬──────────────────────────────────┘
+                   v
+         ┌─────────────────────┐
+         │   Parser + AST      │
+         └──────────┬──────────┘
+                    v
+         ┌─────────────────────┐
+         │  Bytecode Generator │
+         └──────────┬──────────┘
+                    v
+    ┌───────────────────────────────────┐
+    │      Interpreter (Ignition)       │  <- Fast startup
+    │   Execute bytecode + collect      │     No compilation
+    │      profiling data               │
+    └──────────┬───────────────┬────────┘
+               │               │
+               │ Hot?          │ Very hot?
+               v               v
+    ┌──────────────┐  ┌────────────────┐
+    │ Baseline JIT │  │ Optimizing JIT │
+    │ (Sparkplug)  │  │   (TurboFan)   │
+    │              │  │                │
+    │ Quick        │  │ Aggressive     │
+    │ compilation  │  │ optimization   │
+    │ + profiling  │  │ using profile  │
+    └──────────────┘  └────────┬───────┘
+                               │
+                        Assumptions
+                        violated?
+                               │
+                               v
+                      ┌─────────────────┐
+                      │  Deoptimization │
+                      │  Back to        │
+                      │  interpreter    │
+                      └─────────────────┘
+```
+
+<Tabs>
+  <Tab title="Tier 1: Interpreter">
+    **Ignition (V8's interpreter)**
+    
+    - Executes bytecode directly
+    - Fast startup (no compilation delay)
+    - Collects type feedback for later optimization
+    - Low memory footprint
+    
+    ```javascript
+    // First execution runs in interpreter
+    function add(a, b) {
+      return a + b;
+    }
+    
+    add(1, 2); // Interpreter
+    ```
+  </Tab>
+  
+  <Tab title="Tier 2: Baseline JIT">
+    **Sparkplug (V8's baseline compiler)**
+    
+    - Quick compilation to machine code
+    - Minimal optimization (direct bytecode translation)
+    - Continues collecting type feedback
+    - 2-5x faster than interpreter
+    
+    ```javascript
+    // After a few calls, compiles to baseline
+    for (let i = 0; i < 100; i++) {
+      add(i, i + 1); // Baseline JIT after ~10 iterations
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Tier 3: Optimizing JIT">
+    **TurboFan (V8's optimizing compiler)**
+    
+    - Expensive compilation process
+    - Aggressive optimizations using type feedback
+    - Speculative optimization with guards
+    - 10-100x faster than interpreter for numeric code
+    
+    ```javascript
+    // After many calls with consistent types
+    for (let i = 0; i < 10000; i++) {
+      add(i, i + 1); // Optimizing JIT after ~1000 iterations
+    }
+    
+    // Optimized version assumes integers
+    // Uses fast integer addition instruction
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+  Compilation has cost. Engines carefully balance when to trigger JIT compilation based on function hotness (call frequency) and compilation cost.
+</Warning>
+
+## Inline caching
+
+Inline caching (IC) is the most important JIT optimization. It speeds up property access by caching location information from previous lookups.
+
+### Property access without IC
+
+Without caching, every property access requires a full lookup:
+
+```javascript
+// Slow: Full prototype chain lookup every time
+function getName(obj) {
+  return obj.name; // Property lookup algorithm:
+                   // 1. Check obj own properties
+                   // 2. Check obj.__proto__
+                   // 3. Check obj.__proto__.__proto__
+                   // ... until found or null
+}
+```
+
+### Monomorphic inline cache
+
+Monomorphic IC handles one object shape (hidden class):
+
+```javascript
+const user1 = { name: 'Alice', age: 30 };
+const user2 = { name: 'Bob', age: 25 };
+
+function getName(obj) {
+  return obj.name;
+}
+
+// First call: IC miss, perform full lookup
+getName(user1); // Cache: { shape: Shape1, offset: 0 }
+
+// Subsequent calls: IC hit (fast path)
+getName(user2); // Same shape, use offset 0 directly
+
+// Conceptual inline cache:
+// if (obj.shape === Shape1) {
+//   return obj[offset: 0]; // Direct memory access!
+// } else {
+//   fallback_to_full_lookup();
+// }
+```
+
+<Info>
+  Monomorphic IC can be 10-100x faster than prototype chain traversal by turning property access into a direct memory read at a fixed offset.
+</Info>
+
+### Polymorphic inline cache
+
+Polymorphic IC handles 2-4 different shapes:
+
+```javascript
+class User {
+  constructor(name) {
+    this.name = name;
+  }
+}
+
+class Admin {
+  constructor(name) {
+    this.name = name;
+    this.role = 'admin';
+  }
+}
+
+function getName(obj) {
+  return obj.name;
+}
+
+const user = new User('Alice');
+const admin = new Admin('Bob');
+
+// First call: User shape
+getName(user); // IC: [{ shape: UserShape, offset: 0 }]
+
+// Second call: Admin shape
+getName(admin); // IC: [
+                //   { shape: UserShape, offset: 0 },
+                //   { shape: AdminShape, offset: 0 }
+                // ]
+
+// Conceptual polymorphic IC:
+// if (obj.shape === UserShape) {
+//   return obj[offset: 0];
+// } else if (obj.shape === AdminShape) {
+//   return obj[offset: 0];
+// } else {
+//   fallback_to_full_lookup();
+// }
+```
+
+### Megamorphic inline cache
+
+When >4 shapes are seen, the IC becomes megamorphic (falls back to generic lookup):
+
+```javascript
+function getName(obj) {
+  return obj.name;
+}
+
+// Called with many different shapes
+for (let i = 0; i < 10; i++) {
+  const obj = {};
+  obj[`prop${i}`] = i; // Different shape each time!
+  obj.name = `name${i}`;
+  getName(obj); // IC becomes megamorphic after 4-5 different shapes
+}
+
+// Performance cliff: 10x slower than monomorphic
+```
+
+<Warning>
+  **Avoid megamorphic ICs:**
+  - Use consistent object shapes (same properties, same order)
+  - Initialize all properties in constructor
+  - Avoid dynamically adding/deleting properties
+  - Use separate functions for different types
+</Warning>
+
+### IC optimization strategies
+
+<Tabs>
+  <Tab title="Consistent shapes">
+    ```javascript
+    // BAD: Inconsistent shapes
+    function createUser(name, age) {
+      const user = { name };
+      if (age) {
+        user.age = age; // Different shape!
+      }
+      return user;
+    }
+    
+    // GOOD: Consistent shapes
+    function createUser(name, age) {
+      return {
+        name,
+        age: age ?? null // Always same properties
+      };
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Property order">
+    ```javascript
+    // BAD: Different property order
+    const user1 = { name: 'Alice', age: 30 };
+    const user2 = { age: 25, name: 'Bob' }; // Different shape!
+    
+    // GOOD: Same property order
+    const user1 = { name: 'Alice', age: 30 };
+    const user2 = { name: 'Bob', age: 25 };
+    ```
+  </Tab>
+  
+  <Tab title="Avoid deletion">
+    ```javascript
+    // BAD: Deleting properties changes shape
+    const obj = { a: 1, b: 2, c: 3 };
+    delete obj.b; // Shape transition!
+    
+    // GOOD: Set to undefined or use Map
+    const obj = { a: 1, b: 2, c: 3 };
+    obj.b = undefined; // Same shape
+    
+    // Or use Map for dynamic keys
+    const map = new Map([['a', 1], ['b', 2], ['c', 3]]);
+    map.delete('b'); // No shape issues
+    ```
+  </Tab>
+  
+  <Tab title="Class hierarchies">
+    ```javascript
+    // Initialize all properties early
+    class User {
+      constructor(name, age) {
+        this.name = name;
+        this.age = age;
+        this.email = null; // Reserve property slot
+      }
+      
+      setEmail(email) {
+        this.email = email; // No shape change
+      }
+    }
+    
+    class Admin extends User {
+      constructor(name, age) {
+        super(name, age);
+        this.role = 'admin'; // Predictable shape
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Type feedback and speculative optimization
+
+Engines collect type information during execution and use it to generate specialized, fast code.
+
+### Type feedback collection
+
+```javascript
+function add(a, b) {
+  return a + b;
+}
+
+// Interpreter tracks types seen:
+add(1, 2);        // Feedback: int + int -> int
+add(3, 4);        // Feedback: int + int -> int
+add(5, 6);        // Feedback: int + int -> int
+
+// After profiling, optimizing JIT generates:
+// Specialized integer addition (single CPU instruction)
+// Guards check inputs are integers
+```
+
+### Speculative optimization
+
+The JIT compiler makes assumptions based on profiled types and inserts guards:
+
+<Steps>
+  <Step title="Collect feedback">
+    Interpreter observes types during execution
+  </Step>
+  
+  <Step title="Speculate">
+    Assume types will remain consistent
+  </Step>
+  
+  <Step title="Optimize">
+    Generate specialized fast code
+  </Step>
+  
+  <Step title="Guard">
+    Insert type checks at function entry
+  </Step>
+  
+  <Step title="Deoptimize">
+    If guards fail, fall back to interpreter
+  </Step>
+</Steps>
+
+```javascript
+function add(a, b) {
+  return a + b;
+}
+
+// Optimized version (pseudocode):
+function add_optimized(a, b) {
+  // Guard: Check assumptions
+  if (typeof a !== 'number' || typeof b !== 'number') {
+    deoptimize(); // Bailout to interpreter
+    return add_unoptimized(a, b);
+  }
+  
+  // Fast path: Integer addition
+  return int_add(a, b); // Single CPU instruction
+}
+```
+
+### Type specialization examples
+
+<Tabs>
+  <Tab title="Numeric operations">
+    ```javascript
+    function calculate(x) {
+      return x * 2 + 1;
+    }
+    
+    // Integer feedback
+    for (let i = 0; i < 10000; i++) {
+      calculate(i); // JIT sees only integers
+    }
+    
+    // Optimized to:
+    // int_multiply(x, 2) + 1
+    // (2-3 CPU instructions)
+    
+    // Deoptimizes if called with:
+    calculate(3.14);      // Float
+    calculate("5");       // String
+    calculate(BigInt(5)); // BigInt
+    ```
+  </Tab>
+  
+  <Tab title="Array operations">
+    ```javascript
+    function sum(arr) {
+      let total = 0;
+      for (let i = 0; i < arr.length; i++) {
+        total += arr[i];
+      }
+      return total;
+    }
+    
+    // Feedback: Array of integers
+    const nums = [1, 2, 3, 4, 5];
+    sum(nums);
+    
+    // Optimized version uses:
+    // - Packed integer array fast path
+    // - Bounds check elimination (length is constant)
+    // - Integer addition without type checks
+    
+    // Deoptimizes if:
+    sum([1, 2, 3.5]);      // Becomes double array
+    sum([1, 2, "3"]);      // Becomes generic array
+    sum([1, 2, , 4]);      // Holey array (sparse)
+    ```
+  </Tab>
+  
+  <Tab title="Object shapes">
+    ```javascript
+    function getCoordinates(point) {
+      return { x: point.x, y: point.y };
+    }
+    
+    const p1 = { x: 10, y: 20 };
+    const p2 = { x: 30, y: 40 };
+    
+    // Feedback: Monomorphic shape
+    getCoordinates(p1);
+    getCoordinates(p2);
+    
+    // Optimized version:
+    // - Direct memory offsets (no property lookup)
+    // - Inline object allocation
+    // - Eliminates temporary object if unused
+    
+    // Deoptimizes if called with:
+    getCoordinates({ y: 1, x: 2 }); // Different shape (property order)
+    getCoordinates({ x: 1, y: 2, z: 3 }); // Different shape (extra property)
+    ```
+  </Tab>
+</Tabs>
+
+<Info>
+  Type-stable code can be 10-100x faster than type-unstable code. Keep function inputs and internal types consistent.
+</Info>
+
+## Deoptimization and bailout mechanisms
+
+When assumptions are violated, optimized code must deoptimize back to the interpreter.
+
+### What triggers deoptimization
+
+```javascript
+function multiply(x, y) {
+  return x * y;
+}
+
+// Optimized for integers
+for (let i = 0; i < 10000; i++) {
+  multiply(i, 2);
+}
+
+// Deoptimization triggers:
+multiply(3.14, 2);        // 1. Type change (int -> float)
+multiply("5", 2);         // 2. Type change (int -> string)
+multiply(2, undefined);   // 3. Type change (int -> undefined)
+```
+
+### Deoptimization process
+
+<Steps>
+  <Step title="Guard failure">
+    Type check or assumption fails in optimized code
+  </Step>
+  
+  <Step title="State reconstruction">
+    Reconstruct interpreter state from optimized frame
+  </Step>
+  
+  <Step title="Bailout">
+    Jump back to interpreter at correct position
+  </Step>
+  
+  <Step title="Continue execution">
+    Interpreter continues with correct state
+  </Step>
+  
+  <Step title="Remark for optimization">
+    Function may be re-optimized with new feedback
+  </Step>
+</Steps>
+
+```javascript
+// Deoptimization example
+function add(a, b) {
+  return a + b; // Line 2
+}
+
+// Optimized for integers
+add(1, 2);
+add(2, 3);
+
+// Deoptimization:
+add("hello", "world");
+
+// Engine:
+// 1. Detects type mismatch in optimized code
+// 2. Reconstructs interpreter state:
+//    - PC: line 2
+//    - Variables: a="hello", b="world"
+// 3. Jumps to interpreter
+// 4. Interpreter completes string concatenation
+// 5. Function marked for re-optimization with new type info
+```
+
+### Deoptimization costs
+
+<Warning>
+  **Deoptimization is expensive:**
+  - State reconstruction overhead (100-1000 cycles)
+  - Lost optimization (back to slow interpreter)
+  - Potential re-optimization cost
+  - Repeated deoptimization may prevent future optimization
+</Warning>
+
+<Tabs>
+  <Tab title="Soft deopt">
+    ```javascript
+    // Soft deopt: Rare path, can re-optimize
+    function process(x) {
+      if (typeof x === 'number') {
+        return x * 2; // Hot path (optimized)
+      }
+      return String(x); // Cold path (rare)
+    }
+    
+    // 99.9% called with numbers
+    for (let i = 0; i < 10000; i++) {
+      process(i);
+    }
+    
+    // Occasional string doesn't break optimization
+    process("hello"); // Soft deopt, then continues
+    ```
+  </Tab>
+  
+  <Tab title="Hard deopt">
+    ```javascript
+    // Hard deopt: Permanent assumption violation
+    function calculate(x) {
+      return x * x;
+    }
+    
+    // Initially called with small integers
+    for (let i = 0; i < 10000; i++) {
+      calculate(i); // Optimized for small ints
+    }
+    
+    // Large number changes assumptions
+    calculate(Number.MAX_SAFE_INTEGER); // Hard deopt
+    
+    // Future calls may not re-optimize
+    ```
+  </Tab>
+  
+  <Tab title="Bailout prevention">
+    ```javascript
+    // Strategy 1: Type guards in source
+    function safeMath(x) {
+      if (typeof x !== 'number') {
+        return 0; // Early exit for non-numbers
+      }
+      return x * x; // Can stay optimized
+    }
+    
+    // Strategy 2: Separate code paths
+    function processNumber(x) {
+      return x * 2;
+    }
+    
+    function processString(x) {
+      return x.repeat(2);
+    }
+    
+    function process(x) {
+      if (typeof x === 'number') {
+        return processNumber(x); // Stays monomorphic
+      }
+      return processString(x); // Separate optimization
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Register allocation
+
+Optimizing JIT compilers allocate CPU registers to variables for maximum performance.
+
+### Register vs memory access
+
+```
+Performance comparison:
+
+Register access: 1 cycle
+L1 cache:        ~4 cycles
+L2 cache:        ~12 cycles
+L3 cache:        ~40 cycles
+RAM:             ~100+ cycles
+
+Goal: Keep hot variables in registers
+```
+
+### Register allocation strategies
+
+<Tabs>
+  <Tab title="Linear scan">
+    ```javascript
+    // Linear scan allocator (fast compilation)
+    function calculate(a, b, c) {
+      const x = a + b;  // x -> register r1
+      const y = b + c;  // y -> register r2
+      const z = x * y;  // z -> register r3
+      return z;
+    }
+    
+    // Assembly-like output:
+    // r1 = add r_a, r_b
+    // r2 = add r_b, r_c
+    // r3 = mul r1, r2
+    // return r3
+    ```
+    
+    **Characteristics:**
+    - Fast allocation algorithm
+    - Single pass over code
+    - Used in baseline JIT
+    - May spill to stack under register pressure
+  </Tab>
+  
+  <Tab title="Graph coloring">
+    ```javascript
+    // Graph coloring (optimizing compiler)
+    function complex(a, b, c, d) {
+      const w = a + b;
+      const x = b + c;
+      const y = c + d;
+      const z = w + x + y;
+      return z;
+    }
+    
+    // Interference graph:
+    //   w ----- x
+    //    \     / \
+    //     \   /   y
+    //      \ /   /
+    //       z   /
+    //        \ /
+    //        result
+    
+    // Coloring (register assignment):
+    // w -> r1, x -> r2, y -> r1 (w is dead), z -> r3
+    ```
+    
+    **Characteristics:**
+    - Optimal register usage
+    - Considers variable lifetime
+    - Used in optimizing JIT
+    - Expensive to compute
+  </Tab>
+  
+  <Tab title="Register pressure">
+    ```javascript
+    // High register pressure example
+    function manyVariables() {
+      const a = 1, b = 2, c = 3, d = 4;
+      const e = 5, f = 6, g = 7, h = 8;
+      const i = 9, j = 10, k = 11, l = 12;
+      
+      // x64 has ~16 general-purpose registers
+      // Some reserved for special purposes
+      // Realistically ~8-10 available
+      
+      return a+b+c+d+e+f+g+h+i+j+k+l; // May spill to stack
+    }
+    
+    // Optimization: Reduce live ranges
+    function optimized() {
+      let sum = 0;
+      sum += 1 + 2;   // r1 = 3
+      sum += 3 + 4;   // r1 += 7
+      sum += 5 + 6;   // r1 += 11
+      // ... only need 1-2 registers
+      return sum;
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Optimizing for register allocation
+
+```javascript
+// BAD: Long variable lifetimes
+function processData(data) {
+  const temp1 = data.map(x => x * 2);
+  const temp2 = data.map(x => x + 1);
+  const temp3 = data.map(x => x - 1);
+  // All temps live simultaneously - register pressure!
+  return temp1.concat(temp2).concat(temp3);
+}
+
+// GOOD: Short variable lifetimes
+function processData(data) {
+  let result = [];
+  result = result.concat(data.map(x => x * 2)); // temp1 dies
+  result = result.concat(data.map(x => x + 1)); // temp2 dies
+  result = result.concat(data.map(x => x - 1)); // temp3 dies
+  return result;
+}
+
+// BETTER: Eliminate temporaries
+function processData(data) {
+  return data.flatMap(x => [x * 2, x + 1, x - 1]);
+}
+```
+
+## JIT optimization best practices
+
+<Tabs>
+  <Tab title="Write optimizable code">
+    ```javascript
+    // 1. Use consistent types
+    function add(a, b) {
+      return a + b; // Keep inputs same type
+    }
+    
+    // 2. Avoid polymorphism
+    class Point {
+      constructor(x, y) {
+        this.x = x; // Always initialize all properties
+        this.y = y; // in same order
+      }
+    }
+    
+    // 3. Use monomorphic call sites
+    function process(obj) {
+      return obj.value; // Call with same object shape
+    }
+    
+    // 4. Prefer arrays over arguments
+    function sum(...args) { // Good: real array
+      return args.reduce((a, b) => a + b, 0);
+    }
+    
+    // 5. Avoid eval and with
+    // (prevents many optimizations)
+    ```
+  </Tab>
+  
+  <Tab title="Benchmark effectively">
+    ```javascript
+    // Use performance.now() for timing
+    function benchmark(fn, iterations = 10000) {
+      // Warmup: Allow JIT to optimize
+      for (let i = 0; i < 1000; i++) {
+        fn();
+      }
+      
+      // Measure
+      const start = performance.now();
+      for (let i = 0; i < iterations; i++) {
+        fn();
+      }
+      const end = performance.now();
+      
+      return (end - start) / iterations;
+    }
+    
+    // Check optimization status (V8)
+    function checkOptimization(fn) {
+      %PrepareFunctionForOptimization(fn);
+      fn(); // Run once
+      %OptimizeFunctionOnNextCall(fn);
+      fn(); // Triggers optimization
+      
+      // Run with: node --allow-natives-syntax script.js
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Debug deoptimizations">
+    ```javascript
+    // V8 flags for debugging JIT
+    // node --trace-opt --trace-deopt script.js
+    
+    function problematic(x) {
+      return x * 2;
+    }
+    
+    // Warm up
+    for (let i = 0; i < 10000; i++) {
+      problematic(i);
+    }
+    // Output: [optimized problematic]
+    
+    // Trigger deopt
+    problematic("oops");
+    // Output: [deoptimized problematic because wrong type]
+    
+    // Use chrome://tracing for detailed profiles
+    // Or Chrome DevTools Performance tab
+    ```
+  </Tab>
+  
+  <Tab title="Avoid anti-patterns">
+    ```javascript
+    // Anti-pattern 1: Polymorphic operations
+    function bad(x) {
+      return x + x; // Sometimes number, sometimes string
+    }
+    
+    // Anti-pattern 2: Dynamic property access
+    function bad(obj, key) {
+      return obj[key]; // Can't optimize without knowing key
+    }
+    
+    // Anti-pattern 3: Prototype modification
+    Array.prototype.myMethod = function() {}; // Invalidates optimizations
+    
+    // Anti-pattern 4: Arguments leaking
+    function bad() {
+      return arguments; // Prevents optimization
+    }
+    
+    // Anti-pattern 5: Try/catch in hot functions
+    function bad(x) {
+      try {
+        return x * 2; // Try blocks limit optimization
+      } catch (e) {}
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Advanced optimization techniques
+
+<Tabs>
+  <Tab title="Function inlining">
+    ```javascript
+    // Before inlining
+    function add(a, b) {
+      return a + b;
+    }
+    
+    function calculate(x) {
+      return add(x, 5) * 2;
+    }
+    
+    // After inlining (by JIT)
+    function calculate_optimized(x) {
+      // add() body inlined
+      return (x + 5) * 2;
+      // Benefits:
+      // - No function call overhead
+      // - More optimization opportunities
+      // - Better register allocation
+    }
+    
+    // Inlining heuristics:
+    // - Small functions (&lt;600 bytecode bytes)
+    // - Monomorphic call sites
+    // - Not too deep nesting
+    ```
+  </Tab>
+  
+  <Tab title="Escape analysis">
+    ```javascript
+    // Object allocation elimination
+    function calculate(x, y) {
+      const point = { x, y }; // Allocated on heap normally
+      return point.x + point.y;
+    }
+    
+    // Optimized version (escape analysis):
+    function calculate_optimized(x, y) {
+      // Object doesn't escape function
+      // JIT eliminates allocation entirely
+      return x + y; // Direct computation
+    }
+    
+    // Object escapes - cannot optimize:
+    function noOptimize(x, y) {
+      const point = { x, y };
+      return point; // Escapes! Must allocate
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Loop optimization">
+    ```javascript
+    // Loop invariant code motion
+    function sumWithConstant(arr, multiplier) {
+      let sum = 0;
+      for (let i = 0; i < arr.length; i++) {
+        sum += arr[i] * multiplier; // multiplier is loop invariant
+      }
+      return sum;
+    }
+    
+    // JIT hoists invariants:
+    function sumWithConstant_optimized(arr, multiplier) {
+      let sum = 0;
+      const m = multiplier; // Hoisted
+      for (let i = 0; i < arr.length; i++) {
+        sum += arr[i] * m;
+      }
+      return sum;
+    }
+    
+    // Strength reduction
+    for (let i = 0; i < n; i++) {
+      arr[i] = i * 4; // Multiplication
+    }
+    
+    // Optimized to:
+    let temp = 0;
+    for (let i = 0; i < n; i++) {
+      arr[i] = temp; // Addition (faster)
+      temp += 4;
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Bounds check elimination">
+    ```javascript
+    // Bounds checks in loops
+    function sumArray(arr) {
+      let sum = 0;
+      for (let i = 0; i < arr.length; i++) {
+        sum += arr[i]; // Bounds check: i < arr.length?
+      }
+      return sum;
+    }
+    
+    // JIT proves bounds check is redundant:
+    function sumArray_optimized(arr) {
+      let sum = 0;
+      const len = arr.length;
+      for (let i = 0; i < len; i++) {
+        sum += arr[i]; // No bounds check needed!
+        // Loop condition guarantees i < len
+      }
+      return sum;
+    }
+    
+    // Enables SIMD and vectorization
+    ```
+  </Tab>
+</Tabs>
+
+<Info>
+  Modern JIT compilers apply dozens of optimization passes. Understanding the most impactful ones helps you write faster code.
+</Info>
+
+## Performance monitoring
+
+```javascript
+// Check function optimization status (V8)
+function isOptimized(fn) {
+  // Requires --allow-natives-syntax flag
+  const status = %GetOptimizationStatus(fn);
+  
+  return {
+    optimized: (status & (1 << 0)) !== 0,
+    neverOptimized: (status & (1 << 1)) !== 0,
+    alwaysOptimized: (status & (1 << 2)) !== 0,
+    maybeDeopted: (status & (1 << 3)) !== 0,
+    optimizedButMarked: (status & (1 << 4)) !== 0,
+    turbofanned: (status & (1 << 5)) !== 0,
+  };
+}
+
+// Usage:
+// node --allow-natives-syntax script.js
+function hotFunction(x) {
+  return x * 2;
+}
+
+// Warm up
+for (let i = 0; i < 10000; i++) hotFunction(i);
+
+console.log(isOptimized(hotFunction));
+// { optimized: true, turbofanned: true, ... }
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Garbage collection" icon="trash" href="/js-engine/garbage-collection">
+    Learn memory management and GC optimization strategies
+  </Card>
+  <Card title="Event loop" icon="rotate" href="/js-engine/event-loop">
+    Master asynchronous JavaScript execution and task scheduling
+  </Card>
+</CardGroup>

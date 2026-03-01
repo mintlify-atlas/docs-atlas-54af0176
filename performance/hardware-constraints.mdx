@@ -1,0 +1,505 @@
+---
+title: Hardware constraints
+description: Test and optimize web applications for embedded systems, memory-constrained environments, and resource-limited hardware through simulation and stress testing
+---
+
+Learn to build and optimize web applications for resource-constrained environments. This module covers embedded systems, extreme memory constraints, CPU limitations, and comprehensive stress testing techniques.
+
+## Embedded systems
+
+Run web applications on microcontroller simulations with severe hardware limitations.
+
+### Run minimal browser on microcontroller simulation
+
+<Steps>
+  <Step title="Set up embedded environment">
+    Use emulators to simulate resource-constrained hardware:
+    
+    ```bash
+    # Install QEMU for ARM microcontroller emulation
+    apt-get install qemu-system-arm
+    
+    # Or use specialized MCU simulators
+    # Renode, SimulAVR, or custom JavaScript-based simulators
+    ```
+    
+    <Info>
+      Popular microcontroller targets include ARM Cortex-M series (M0, M3, M4) with 64-256KB RAM and 10-100MHz clock speeds.
+    </Info>
+  </Step>
+  
+  <Step title="Strip down browser components">
+    Create a minimal browser engine that fits in constrained memory:
+    
+    - Remove complex CSS features (grid, flexbox)
+    - Implement simplified layout (block-only or table-based)
+    - Disable JavaScript JIT compilation
+    - Use minimal font rendering (bitmap fonts)
+    - Simplify paint and composite phases
+    
+    ```cpp
+    // Minimal renderer configuration
+    #define MAX_DOM_NODES 500
+    #define MAX_CSS_RULES 100
+    #define HEAP_SIZE (64 * 1024)  // 64KB total heap
+    #define STACK_SIZE (8 * 1024)   // 8KB stack
+    ```
+  </Step>
+  
+  <Step title="Optimize memory layout">
+    Structure data for minimal memory footprint:
+    
+    - Pack structures and use bit fields
+    - Share string storage (string interning)
+    - Use 16-bit pointers for small heaps
+    - Implement arena allocation
+    - Avoid heap fragmentation
+    
+    ```cpp
+    // Packed DOM node structure
+    struct DOMNode {
+      uint16_t type : 4;        // 16 possible types
+      uint16_t flags : 4;       // visibility, etc.
+      uint16_t parent : 16;     // index into node array
+      uint16_t firstChild : 16;
+      uint16_t nextSibling : 16;
+      uint16_t stringId : 16;   // interned string
+    }; // Total: 10 bytes per node
+    ```
+  </Step>
+  
+  <Step title="Implement progressive rendering">
+    Render content incrementally to stay responsive:
+    
+    - Parse and render in small chunks
+    - Prioritize visible content
+    - Defer off-screen rendering
+    - Use cooperative scheduling
+    
+    <Note>
+      Without preemptive multitasking, long-running tasks can freeze the entire system. Break work into {"<"}10ms chunks.
+    </Note>
+  </Step>
+</Steps>
+
+### Memory-constrained rendering (64KB RAM)
+
+Optimize rendering for extremely limited memory environments.
+
+<Steps>
+  <Step title="Implement streaming HTML parser">
+    Parse HTML without storing the entire document:
+    
+    ```cpp
+    class StreamingParser {
+      void parseChunk(const char* html, size_t length) {
+        // Parse incrementally, emit events
+        // Only keep current parse state, not entire DOM
+      }
+      
+      void onOpenTag(const char* tag) {
+        if (shouldRender(tag)) {
+          renderAndDiscard();
+        }
+      }
+    };
+    ```
+  </Step>
+  
+  <Step title="Use immediate mode rendering">
+    Render directly to framebuffer without retaining display lists:
+    
+    ```cpp
+    // Don't store paint commands
+    void paintElement(Element* el) {
+      // Render directly to screen buffer
+      drawRect(el->x, el->y, el->width, el->height, el->bgColor);
+      drawText(el->x, el->y, el->text);
+    }
+    ```
+  </Step>
+  
+  <Step title="Implement virtual DOM with limited cache">
+    Keep only visible elements in memory:
+    
+    ```cpp
+    struct ViewportCache {
+      DOMNode visible[MAX_VISIBLE_NODES];
+      int firstVisibleIndex;
+      
+      void scroll(int newPosition) {
+        // Evict off-screen nodes
+        // Load newly visible nodes from storage
+      }
+    };
+    ```
+    
+    <Warning>
+      This approach requires re-parsing content when scrolling. Profile to ensure acceptable performance.
+    </Warning>
+  </Step>
+</Steps>
+
+### CPU-constrained JavaScript (10MHz)
+
+Optimize JavaScript execution for slow processors.
+
+<Steps>
+  <Step title="Disable JIT compilation">
+    JIT compilers require memory and CPU time. Use interpreter-only mode:
+    
+    ```cpp
+    // V8 configuration
+    v8::Isolate::CreateParams params;
+    params.array_buffer_allocator = allocator;
+    
+    // Disable TurboFan and Sparkplug
+    const char* flags = "--no-turbofan --no-sparkplug --no-concurrent-marking";
+    v8::V8::SetFlagsFromString(flags);
+    ```
+  </Step>
+  
+  <Step title="Optimize bytecode execution">
+    Reduce interpreter overhead:
+    
+    - Cache property lookups aggressively
+    - Avoid polymorphic operations
+    - Use specialized fast paths for common operations
+    - Implement direct-threaded dispatch
+  </Step>
+  
+  <Step title="Limit JavaScript features">
+    Subset JavaScript to reduce engine complexity:
+    
+    - Disable eval() and Function constructor
+    - Remove WeakMap, WeakSet, Proxy
+    - Simplify Promise implementation
+    - Use cooperative async only (no preemption)
+  </Step>
+  
+  <Step title="Profile and optimize hot paths">
+    Identify bottlenecks with cycle-accurate profiling:
+    
+    ```cpp
+    #define PROFILE_START(name) \
+      uint32_t start_##name = getCycleCount()
+    
+    #define PROFILE_END(name) \
+      uint32_t cycles_##name = getCycleCount() - start_##name; \
+      printf("%s: %d cycles\n", #name, cycles_##name)
+    ```
+  </Step>
+</Steps>
+
+<Info>
+  A 10MHz processor executes ~10 million instructions per second. At 2-5 cycles per bytecode instruction, you can execute ~2-5 million bytecodes per second.
+</Info>
+
+### Display optimization for small screens
+
+Optimize rendering for low-resolution displays (128x64, 320x240).
+
+- Simplify layouts (single column, minimal nesting)
+- Use bitmap fonts (no anti-aliasing)
+- Reduce color depth (1-bit, 4-bit, 8-bit palettes)
+- Implement dirty rectangle tracking (only redraw changed regions)
+- Use hardware-accelerated blitting if available
+
+```cpp
+// Dirty rectangle tracking
+struct DirtyRect {
+  int x, y, width, height;
+};
+
+void invalidateRect(int x, int y, int w, int h) {
+  dirtyRegion.merge(x, y, w, h);
+}
+
+void render() {
+  if (dirtyRegion.isEmpty()) return;
+  
+  // Only repaint dirty rectangles
+  for (auto& rect : dirtyRegion) {
+    renderRect(rect);
+  }
+  
+  dirtyRegion.clear();
+}
+```
+
+## Stress testing
+
+Simulate extreme conditions to identify breaking points and optimize for resilience.
+
+### Memory pressure simulation
+
+Test application behavior under low memory conditions.
+
+<Steps>
+  <Step title="Limit heap size">
+    ```javascript
+    // Node.js: limit heap
+    node --max-old-space-size=128 app.js
+    
+    // Chrome: launch with memory constraints
+    chrome --js-flags="--max-old-space-size=128"
+    ```
+  </Step>
+  
+  <Step title="Inject allocation failures">
+    ```cpp
+    // Custom allocator that simulates OOM
+    void* constrainedMalloc(size_t size) {
+      if (getCurrentHeapUsage() + size > MEMORY_LIMIT) {
+        return nullptr;  // Simulate out of memory
+      }
+      return malloc(size);
+    }
+    ```
+  </Step>
+  
+  <Step title="Monitor and handle pressure">
+    ```javascript
+    // Use PerformanceObserver to detect memory pressure
+    const observer = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        if (entry.name === 'memory-pressure') {
+          // Reduce memory usage
+          clearCaches();
+          releaseUnusedResources();
+        }
+      }
+    });
+    ```
+  </Step>
+  
+  <Step title="Test graceful degradation">
+    Verify the application remains functional with reduced capabilities:
+    
+    - Disable features that require significant memory
+    - Reduce cache sizes
+    - Unload off-screen content
+    - Show simplified UI
+  </Step>
+</Steps>
+
+<Warning>
+  Memory exhaustion can cause crashes or data loss. Always implement graceful degradation and save critical state.
+</Warning>
+
+### CPU throttling
+
+Test performance on slow processors.
+
+<Steps>
+  <Step title="Enable Chrome CPU throttling">
+    ```javascript
+    // DevTools Protocol
+    const client = await CDP();
+    await client.Emulation.setCPUThrottlingRate({ rate: 20 }); // 20x slowdown
+    ```
+    
+    Or use Chrome DevTools Performance panel > CPU throttling dropdown.
+  </Step>
+  
+  <Step title="Measure frame rates and responsiveness">
+    ```javascript
+    let frameCount = 0;
+    let lastTime = performance.now();
+    
+    function measureFPS() {
+      frameCount++;
+      const now = performance.now();
+      if (now - lastTime >= 1000) {
+        console.log(`FPS: ${frameCount}`);
+        frameCount = 0;
+        lastTime = now;
+      }
+      requestAnimationFrame(measureFPS);
+    }
+    ```
+  </Step>
+  
+  <Step title="Optimize for slow CPUs">
+    - Reduce JavaScript execution time per frame ({"<"}16ms)
+    - Debounce expensive operations
+    - Use requestIdleCallback for non-critical work
+    - Implement progressive enhancement
+  </Step>
+</Steps>
+
+### Network constraint testing (2G, 3G)
+
+Simulate slow and unreliable networks.
+
+<Steps>
+  <Step title="Use Chrome network throttling">
+    ```javascript
+    // DevTools Protocol
+    await client.Network.emulateNetworkConditions({
+      offline: false,
+      latency: 300,        // 300ms latency
+      downloadThroughput: 50 * 1024,   // 50 KB/s
+      uploadThroughput: 20 * 1024,     // 20 KB/s
+    });
+    ```
+  </Step>
+  
+  <Step title="Test with packet loss">
+    Use system-level network shaping:
+    
+    ```bash
+    # Linux: use tc (traffic control)
+    tc qdisc add dev eth0 root netem delay 200ms loss 5%
+    
+    # macOS: use Network Link Conditioner
+    # Windows: use NetLimiter or TMNetSim
+    ```
+  </Step>
+  
+  <Step title="Optimize for slow networks">
+    - Minimize critical path resources
+    - Implement aggressive caching
+    - Use HTTP/2 server push
+    - Compress all assets
+    - Implement offline functionality (Service Workers)
+  </Step>
+  
+  <Step title="Test offline scenarios">
+    ```javascript
+    // Simulate offline
+    await client.Network.emulateNetworkConditions({ offline: true });
+    
+    // Verify graceful degradation
+    // Check Service Worker fallbacks
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  2G networks typically have 250-500ms latency and 50-100 Kbps throughput. 3G provides 100-200ms latency and 400-2000 Kbps.
+</Note>
+
+### GPU bottleneck analysis
+
+Identify and resolve GPU performance issues.
+
+<Steps>
+  <Step title="Enable GPU profiling">
+    ```bash
+    # Chrome with GPU debugging
+    chrome --enable-gpu-benchmarking --enable-logging=stderr --v=1
+    ```
+    
+    Use Chrome DevTools > Rendering panel:
+    - Paint flashing
+    - Layer borders
+    - FPS meter
+  </Step>
+  
+  <Step title="Identify GPU bottlenecks">
+    Common issues:
+    - Excessive layer promotion (too many composite layers)
+    - Large texture uploads
+    - Overdraw (painting same pixels multiple times)
+    - Expensive filters and blend modes
+  </Step>
+  
+  <Step title="Profile with chrome://tracing">
+    ```javascript
+    // Capture trace with GPU data
+    // Navigate to chrome://tracing
+    // Look for "GPU" process tracks
+    ```
+    
+    Analyze:
+    - Texture upload time
+    - Rasterization time
+    - Composite time
+    - GPU command buffer execution
+  </Step>
+  
+  <Step title="Optimize GPU usage">
+    - Reduce layer count (use `will-change` sparingly)
+    - Minimize texture size and count
+    - Use CSS containment to isolate expensive effects
+    - Avoid expensive filters on large elements
+    - Batch DOM changes to reduce repaints
+  </Step>
+</Steps>
+
+<Warning>
+  GPU memory is limited. Excessive layer promotion can exhaust GPU memory and cause severe performance degradation or crashes.
+</Warning>
+
+## Project: Port mini-browser to embedded environment
+
+<Steps>
+  <Step title="Choose target hardware">
+    Select realistic embedded constraints:
+    - 64-128KB RAM
+    - 10-50MHz CPU
+    - 128x64 or 320x240 display
+    - No hardware acceleration
+  </Step>
+  
+  <Step title="Implement minimal browser engine">
+    Build stripped-down engine:
+    - HTML parser (subset: div, span, p, img, a)
+    - CSS parser (subset: color, font-size, margin, padding)
+    - Simple block layout engine
+    - Immediate-mode renderer
+    - Minimal JavaScript interpreter (or no JS)
+  </Step>
+  
+  <Step title="Optimize for constraints">
+    Apply aggressive optimizations:
+    - String interning
+    - Packed data structures
+    - Streaming parsing
+    - Progressive rendering
+    - Memory pooling
+  </Step>
+  
+  <Step title="Stress test">
+    Verify stability under load:
+    - Render complex pages (1000+ nodes)
+    - Simulate network delays
+    - Test memory exhaustion handling
+    - Measure render time per frame
+  </Step>
+  
+  <Step title="Document performance characteristics">
+    Create comprehensive performance report:
+    - Memory usage breakdown
+    - Render time by page complexity
+    - Bottleneck analysis
+    - Optimization impact measurements
+    
+    ```markdown
+    ## Performance Report
+    
+    ### Memory Usage
+    - HTML parser: 2KB
+    - DOM storage: 15KB (500 nodes)
+    - CSS engine: 3KB (100 rules)
+    - Layout engine: 4KB
+    - Render buffer: 10KB (320x240x1bit)
+    - Total: 34KB / 64KB (53%)
+    
+    ### Render Performance
+    - Simple page (50 nodes): 250ms
+    - Medium page (200 nodes): 800ms
+    - Complex page (500 nodes): 2.1s
+    
+    ### Bottlenecks
+    1. Layout calculation: 60% of render time
+    2. Text rendering: 25% of render time
+    3. HTML parsing: 10% of render time
+    ```
+  </Step>
+</Steps>
+
+<Info>
+  Real-world embedded browsers like NetSurf, Dillo, or early Opera Mobile provide excellent reference implementations for resource-constrained environments.
+</Info>

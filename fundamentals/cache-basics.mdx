@@ -1,0 +1,332 @@
+---
+title: Cache basics
+description: Master CPU cache hierarchies, cache lines, and optimization techniques for L1, L2, and L3 caches to maximize memory access performance
+---
+
+## Cache hierarchy
+
+CPU caches are small, fast memory buffers that reduce the latency of accessing data from main RAM. Modern processors use multiple levels of cache with different speed and capacity tradeoffs.
+
+### L1, L2, and L3 caches
+
+<CardGroup cols={3}>
+  <Card title="L1 cache" icon="gauge-high">
+    **Fastest and smallest**
+    
+    - Typically 32-64 KB per core
+    - 1-4 cycle latency
+    - Split into instruction and data caches
+    - Closest to CPU cores
+  </Card>
+  
+  <Card title="L2 cache" icon="gauge">
+    **Middle tier**
+    
+    - Typically 256 KB - 1 MB per core
+    - 10-20 cycle latency
+    - Unified (instructions + data)
+    - Private to each core
+  </Card>
+  
+  <Card title="L3 cache" icon="gauge-low">
+    **Largest and slowest**
+    
+    - Typically 8-64 MB shared
+    - 40-75 cycle latency
+    - Shared across all cores
+    - Last stop before RAM
+  </Card>
+</CardGroup>
+
+<Info>
+For comparison, main RAM typically has 100-300 cycle latency. A cache hit at L1 is ~100x faster than going to RAM.
+</Info>
+
+### Cache access flow
+
+When the CPU needs data, it searches through the cache hierarchy:
+
+<Steps>
+  <Step title="L1 cache check">
+    First check the L1 cache (separate instruction and data caches). If found (cache hit), return data immediately with 1-4 cycle latency.
+  </Step>
+  
+  <Step title="L2 cache check">
+    On L1 miss, check the L2 cache. If found, return data with ~10-20 cycle latency and backfill L1.
+  </Step>
+  
+  <Step title="L3 cache check">
+    On L2 miss, check the shared L3 cache. If found, return data with ~40-75 cycle latency and backfill L2 and L1.
+  </Step>
+  
+  <Step title="Main memory access">
+    On L3 miss, fetch from main RAM with ~100-300 cycle latency. Update all cache levels.
+  </Step>
+</Steps>
+
+```
+CPU Core
+   ↓
+┌──────────┐  Hit: 1-4 cycles
+│ L1 Cache │  32-64 KB
+└──────────┘
+   ↓ Miss
+┌──────────┐  Hit: 10-20 cycles
+│ L2 Cache │  256KB - 1MB
+└──────────┘
+   ↓ Miss
+┌──────────┐  Hit: 40-75 cycles
+│ L3 Cache │  8-64 MB (shared)
+└──────────┘
+   ↓ Miss
+┌──────────┐  Hit: 100-300 cycles
+│ Main RAM │  8-64 GB
+└──────────┘
+```
+
+## Cache lines
+
+Caches don't store individual bytes — they work with fixed-size blocks called cache lines.
+
+### Cache line fundamentals
+
+<Tabs>
+  <Tab title="Concept">
+    A **cache line** is the minimum unit of data transfer between cache and memory.
+    
+    - **Typical size**: 64 bytes on modern x86/ARM processors
+    - **Spatial locality**: accessing one byte loads the entire 64-byte line
+    - **Alignment**: cache lines are aligned to 64-byte boundaries in memory
+    
+    When you access a single byte, the CPU fetches the entire surrounding 64-byte block into cache, betting you'll soon access nearby data.
+  </Tab>
+  
+  <Tab title="Example">
+    ```c
+    // Array elements are adjacent in memory
+    int array[16];  // 64 bytes (16 × 4 bytes)
+    
+    // First access: loads entire cache line (all 16 elements)
+    int x = array[0];   
+    
+    // Next accesses: hit L1 cache (same cache line)
+    int y = array[1];
+    int z = array[15];
+    
+    // Access beyond first 16 elements: new cache line
+    int w = array[16];  // Loads next 64-byte line
+    ```
+    
+    <Info>
+    Sequential array access is extremely cache-friendly because it maximizes cache line utilization.
+    </Info>
+  </Tab>
+</Tabs>
+
+### False sharing
+
+<Warning>
+False sharing occurs when different CPU cores modify variables that happen to reside on the same cache line, causing excessive cache coherency traffic and severe performance degradation.
+</Warning>
+
+```c
+// BAD: False sharing
+struct Counter {
+    int count_thread1;  // 
+    int count_thread2;  // ← Same cache line!
+};
+
+// Thread 1 modifies count_thread1
+// Thread 2 modifies count_thread2
+// Result: constant cache line ping-pong between cores
+```
+
+```c
+// GOOD: Padded to separate cache lines
+struct Counter {
+    int count_thread1;
+    char padding[60];   // Push to different cache lines
+    int count_thread2;
+};
+
+// Now each counter is on its own cache line
+// No false sharing!
+```
+
+## Cache optimization techniques
+
+Writing cache-friendly code significantly improves performance by maximizing cache hit rates.
+
+### Data layout optimization
+
+<AccordionGroup>
+  <Accordion title="Array of Structures (AoS) vs Structure of Arrays (SoA)" icon="table">
+    **Array of Structures (AoS)** - traditional object-oriented approach:
+    
+    ```c
+    struct Point {
+        float x, y, z;
+    };
+    Point points[1000];
+    
+    // Processing: loads all fields even if only need x
+    for (int i = 0; i < 1000; i++) {
+        sum += points[i].x;  // Loads x, y, z into cache
+    }
+    ```
+    
+    **Structure of Arrays (SoA)** - cache-optimized:
+    
+    ```c
+    struct Points {
+        float x[1000];
+        float y[1000];
+        float z[1000];
+    };
+    Points points;
+    
+    // Processing: only loads needed data
+    for (int i = 0; i < 1000; i++) {
+        sum += points.x[i];  // Only loads x values
+    }
+    ```
+    
+    <Tip>
+    Use SoA when you frequently process one field across many objects. Use AoS when you typically need all fields together.
+    </Tip>
+  </Accordion>
+  
+  <Accordion title="Prefetching" icon="forward-fast">
+    Give the CPU hints about future memory accesses:
+    
+    ```c
+    for (int i = 0; i < n; i++) {
+        // Prefetch next iterations' data
+        __builtin_prefetch(&array[i + 8]);
+        
+        // Process current data
+        process(array[i]);
+    }
+    ```
+    
+    Modern CPUs have automatic hardware prefetchers, but manual prefetching can help with irregular access patterns.
+  </Accordion>
+  
+  <Accordion title="Loop blocking (tiling)" icon="grid">
+    Break large datasets into cache-sized chunks:
+    
+    ```c
+    // BAD: processes entire rows, poor cache reuse
+    for (int i = 0; i < N; i++)
+        for (int j = 0; j < N; j++)
+            sum += matrix[i][j];
+    
+    // GOOD: processes cache-sized blocks
+    for (int ii = 0; ii < N; ii += BLOCK_SIZE)
+        for (int jj = 0; jj < N; jj += BLOCK_SIZE)
+            for (int i = ii; i < min(ii + BLOCK_SIZE, N); i++)
+                for (int j = jj; j < min(jj + BLOCK_SIZE, N); j++)
+                    sum += matrix[i][j];
+    ```
+  </Accordion>
+  
+  <Accordion title="Data alignment" icon="align-left">
+    Align frequently accessed data to cache line boundaries:
+    
+    ```c
+    // Align to 64-byte cache line
+    struct alignas(64) HotData {
+        int frequently_accessed[16];
+    };
+    
+    // Or using attributes
+    __attribute__((aligned(64))) int hot_array[16];
+    ```
+    
+    This prevents hot data from spanning multiple cache lines.
+  </Accordion>
+</AccordionGroup>
+
+### Access pattern optimization
+
+<Tabs>
+  <Tab title="Sequential access">
+    **Best case**: Access memory sequentially
+    
+    ```c
+    // GOOD: Sequential access
+    for (int i = 0; i < n; i++) {
+        sum += array[i];  // Perfect cache line utilization
+    }
+    ```
+    
+    - Maximizes cache line utilization (use all 64 bytes)
+    - Enables hardware prefetching
+    - Predictable access pattern
+  </Tab>
+  
+  <Tab title="Strided access">
+    **Moderate**: Access with constant stride
+    
+    ```c
+    // Accessing every 4th element
+    for (int i = 0; i < n; i += 4) {
+        sum += array[i];  // Uses 1/4 of each cache line
+    }
+    ```
+    
+    - Still somewhat predictable
+    - Wastes cache line capacity
+    - Hardware prefetcher may help
+  </Tab>
+  
+  <Tab title="Random access">
+    **Worst case**: Random/pointer-chasing access
+    
+    ```c
+    // POOR: Random access
+    for (int i = 0; i < n; i++) {
+        sum += array[random_indices[i]];  // Cache thrashing
+    }
+    
+    // POOR: Pointer chasing (linked list)
+    while (node != NULL) {
+        sum += node->value;  // Each access likely a cache miss
+        node = node->next;
+    }
+    ```
+    
+    - Unpredictable access pattern
+    - Poor cache line utilization
+    - Prefetching ineffective
+  </Tab>
+</Tabs>
+
+### Working set size
+
+Keep your program's working set (frequently accessed data) smaller than cache capacity:
+
+- **L1-sized** (32-64 KB): Ultra-hot paths, critical loops
+- **L2-sized** (256 KB - 1 MB): Hot data structures
+- **L3-sized** (8-64 MB): Warm data, larger working sets
+- **Beyond L3**: Cold data, cache misses inevitable
+
+<Tip>
+Profile your code with cache performance counters (using `perf stat -e cache-misses,cache-references` on Linux) to identify cache bottlenecks.
+</Tip>
+
+## Performance impact
+
+Cache optimization can provide dramatic performance improvements:
+
+| Optimization | Typical Speedup |
+|--------------|----------------|
+| Sequential vs random array access | 10-50x |
+| SoA vs AoS for SIMD workloads | 2-4x |
+| Eliminating false sharing | 5-20x |
+| Loop blocking for matrix operations | 2-10x |
+| Proper data alignment | 1.2-2x |
+
+<Info>
+The exact improvements depend on your specific workload, data sizes, and hardware. Always measure before and after optimization.
+</Info>

@@ -1,0 +1,285 @@
+---
+title: Learning outcomes
+description: What you will build and understand by completing the Raw Bits to React course
+---
+
+## What you will build
+
+By the end of this course, you will have built complete, production-ready systems from scratch:
+
+<CardGroup cols={2}>
+  <Card title="Browser engine" icon="window-maximize">
+    A complete browser engine with HTML parsing, CSS engine, layout, paint, and composite layers
+  </Card>
+  
+  <Card title="JavaScript engine" icon="js">
+    A full JavaScript engine with parser, interpreter, garbage collector, and event loop
+  </Card>
+  
+  <Card title="Virtual DOM library" icon="diagram-project">
+    An optimized virtual DOM implementation with efficient reconciliation algorithms
+  </Card>
+  
+  <Card title="React-like framework" icon="atom">
+    A framework with Fiber reconciler, hooks, and concurrent rendering features
+  </Card>
+  
+  <Card title="SSR framework" icon="server">
+    Server-side rendering system with streaming and progressive hydration
+  </Card>
+  
+  <Card title="Performance profiler" icon="chart-line">
+    Custom profiling tools integrated into browser and JS engines
+  </Card>
+  
+  <Card title="Production application" icon="rocket">
+    A production-optimized Next.js application with sub-second load times
+  </Card>
+  
+  <Card title="WebAssembly modules" icon="cube">
+    High-performance WASM modules for computationally intensive tasks
+  </Card>
+</CardGroup>
+
+## What you will understand
+
+You'll gain deep understanding of every layer of the frontend stack:
+
+<AccordionGroup>
+  <Accordion title="CPU execution and memory management" icon="microchip">
+    - How CPUs fetch, decode, execute, and writeback instructions
+    - Register usage and instruction scheduling
+    - Branch prediction and pipeline optimization
+    - Cache hierarchy (L1/L2/L3) and cache line behavior
+    - Stack vs heap memory allocation
+    - Virtual memory and memory layout
+    - Memory alignment and pointer arithmetic
+  </Accordion>
+  
+  <Accordion title="Network protocols and servers" icon="network-wired">
+    - Socket programming with TCP and UDP
+    - TCP handshake and flow control mechanisms
+    - HTTP protocol: headers, chunked encoding, keep-alive
+    - TLS handshake and certificate verification
+    - WebSocket upgrade process and frame handling
+    - Network debugging with tcpdump and Wireshark
+    - Simulating network conditions for testing
+  </Accordion>
+  
+  <Accordion title="Browser engines" icon="window-maximize">
+    ### HTML parsing
+    - Tokenization state machine with 13 states and 67 transitions
+    - Tree construction algorithm
+    - Error recovery mechanisms and quirks mode
+    - Script execution: parser-blocking, async, and defer
+    
+    ### CSS engine
+    - CSS tokenization and parsing
+    - Selector matching with specificity calculation
+    - Cascade resolution algorithm
+    - Style computation and inheritance rules
+    - Media query evaluation
+    
+    ### Layout engine
+    - Box model calculation
+    - Flow layouts, floats, and positioning schemes
+    - Flexbox algorithm: main/cross axis, flex basis, grow, shrink
+    - Grid algorithm: track sizing, placement, spanning
+    - Line breaking and text shaping
+    
+    ### Rendering
+    - Layer tree construction
+    - Paint recording and display lists
+    - Rasterization strategies
+    - GPU compositing and texture management
+  </Accordion>
+  
+  <Accordion title="JavaScript engines" icon="js">
+    ### Parsing and execution
+    - Lexical analysis and tokenization
+    - Recursive descent parser implementation
+    - Abstract syntax tree (AST) construction and validation
+    - Scope analysis and symbol resolution
+    
+    ### Runtime
+    - Bytecode design and instruction set architecture
+    - Stack-based virtual machine execution
+    - Closure implementation with environment chains
+    - Prototype chain traversal
+    - Property lookup optimization using inline caches
+    
+    ### Memory management
+    - Mark-and-sweep garbage collection algorithm
+    - Generational collection (young/old generations)
+    - Incremental and concurrent GC strategies
+    - WeakMap and WeakSet implementation
+    - Memory profiling and leak detection techniques
+    
+    ### Event loop
+    - Microtask queue for Promise.then callbacks
+    - Macrotask queue for setTimeout and I/O
+    - Animation frame callbacks
+    - Idle callbacks and scheduling
+    - Task prioritization mechanisms
+    
+    ### JIT compilation (optional)
+    - Inline caching and polymorphic inline caching
+    - Type feedback and speculative optimization
+    - Deoptimization and bailout mechanisms
+    - Register allocation strategies
+  </Accordion>
+  
+  <Accordion title="Virtual DOM and reconciliation" icon="diagram-project">
+    - Tree diffing complexity: from O(n³) to O(n)
+    - Key-based reconciliation for list optimization
+    - Heuristics: component type, element type, list diffing
+    - Fiber architecture fundamentals
+    - Requestanimationframe-based update scheduling
+    - Double buffering for UI consistency
+    - Priority queues for update management
+    - Time slicing for interruptible rendering
+    - Layout thrashing detection and prevention
+    - Read/write batching (FastDOM pattern)
+    - CSS containment and layer creation
+    - Composite-only animations
+  </Accordion>
+  
+  <Accordion title="React internals and concurrent rendering" icon="atom">
+    ### Fiber reconciler
+    - Work loop and unit of work concepts
+    - Reconciliation phases: render and commit
+    - Effect list construction and execution
+    - Priority levels and lane model
+    
+    ### Hooks implementation
+    - Hooks queue and cursor mechanism
+    - useEffect cleanup and dependency checking
+    - useRef as mutable container
+    - useCallback and useMemo memoization
+    - Custom hook composition patterns
+    
+    ### Concurrent features
+    - Time slicing and work interruption
+    - Suspense and lazy loading mechanisms
+    - useTransition and useDeferredValue
+    - Automatic batching of state updates
+    
+    ### Server-side rendering
+    - renderToString vs renderToPipeableStream
+    - Progressive hydration and selective hydration
+    - Double pass problem and solutions
+    - Edge rendering vs Node rendering tradeoffs
+    
+    ### Next.js architecture
+    - File-based routing implementation
+    - Static site generation (SSG) with getStaticProps
+    - Incremental static regeneration (ISR)
+    - API routes and middleware
+    - Module bundling and code splitting strategies
+  </Accordion>
+  
+  <Accordion title="Performance profiling and optimization" icon="gauge-high">
+    ### Profiling tools
+    - Chrome DevTools Performance tab deep dive
+    - React DevTools Profiler usage
+    - Lighthouse metrics: FCP, LCP, TTI, CLS, FID
+    - Custom performance marks and measures
+    - Heap snapshots and allocation timelines
+    
+    ### Optimization techniques
+    - Component memoization strategies
+    - Virtualized lists and windowing
+    - Image optimization: formats, lazy loading, responsive images
+    - Font optimization: subsetting, preloading, display strategies
+    - Bundle analysis and tree shaking
+    - Code splitting: route-based and component-based
+    
+    ### Critical rendering path
+    - Eliminating render-blocking resources
+    - Minimizing critical CSS
+    - Deferring non-critical JavaScript
+    - Preload, prefetch, and preconnect strategies
+  </Accordion>
+</AccordionGroup>
+
+## Core competencies
+
+After completing this course, you will be able to:
+
+<Steps>
+  <Step title="Debug at any level of the stack">
+    Diagnose issues from CPU cache misses to React rendering performance, with complete understanding of every layer in between.
+  </Step>
+  
+  <Step title="Optimize with confidence">
+    Make informed optimization decisions based on deep understanding of browser internals, JavaScript engines, and framework behavior.
+  </Step>
+  
+  <Step title="Build production systems">
+    Create performant, scalable frontend applications that handle:
+    - 10,000+ concurrent DOM updates
+    - Sub-second initial page loads
+    - Smooth 60fps animations
+    - Complex UI interactions
+  </Step>
+  
+  <Step title="Understand tradeoffs">
+    Evaluate architectural decisions with knowledge of their implications across the entire stack, from memory usage to user experience.
+  </Step>
+  
+  <Step title="Read engine source code">
+    Navigate and understand the source code of V8, Chromium, React, and Next.js with confidence.
+  </Step>
+  
+  <Step title="Modify browser and JS engines">
+    Build engines from source, add custom instrumentation, and create patches for debugging and profiling.
+  </Step>
+  
+  <Step title="Integrate WebAssembly">
+    Leverage WASM for performance-critical code paths and optimize the JavaScript/WASM boundary.
+  </Step>
+  
+  <Step title="Handle constraints">
+    Optimize for extreme resource constraints, including embedded systems with limited memory and CPU.
+  </Step>
+</Steps>
+
+## Performance benchmarks
+
+Your capstone project will meet these production-ready standards:
+
+<CardGroup cols={2}>
+  <Card title="Rendering performance" icon="display">
+    - Render complex UIs at 60fps
+    - Handle 10,000+ concurrent DOM updates
+    - Smooth animations even with heavy updates
+  </Card>
+  
+  <Card title="Load performance" icon="bolt">
+    - Sub-second initial page load
+    - Optimized LCP < 1s (from 3s baseline)
+    - Progressive enhancement support
+  </Card>
+  
+  <Card title="Reliability" icon="shield-check">
+    - Comprehensive error handling
+    - Graceful degradation
+    - Edge case coverage
+  </Card>
+  
+  <Card title="Documentation" icon="book">
+    - Full performance documentation
+    - Before/after metrics for all optimizations
+    - Performance characteristics under constraints
+  </Card>
+</CardGroup>
+
+## Final deliverable
+
+<Check>
+A production-ready system demonstrating complete understanding of every layer from CPU to pixels, with comprehensive documentation and performance validation.
+</Check>
+
+<Info>
+You'll debug and optimize at every level of the stack with complete confidence, understanding not just how to use frameworks and tools, but how they work internally and why they make specific design decisions.
+</Info>

@@ -1,0 +1,585 @@
+---
+title: Garbage collection
+description: Learn how JavaScript engines automatically manage memory through mark-and-sweep collection, generational strategies, and incremental/concurrent algorithms
+---
+
+## Overview
+
+Garbage collection (GC) is the automatic memory management system that JavaScript engines use to reclaim memory occupied by objects that are no longer reachable. Understanding GC mechanics is essential for writing performant JavaScript applications and diagnosing memory issues.
+
+<Info>
+  Modern JavaScript engines use sophisticated GC strategies to minimize pause times while efficiently reclaiming memory. The techniques covered here are implemented in production engines like V8, SpiderMonkey, and JavaScriptCore.
+</Info>
+
+## Mark-and-sweep garbage collection
+
+Mark-and-sweep is the fundamental algorithm underlying most JavaScript garbage collectors. It operates in two distinct phases:
+
+<Steps>
+  <Step title="Mark phase">
+    The collector starts from root objects (global variables, stack references, active closures) and traverses the object graph, marking every reachable object.
+  </Step>
+  
+  <Step title="Sweep phase">
+    The collector scans through the heap, reclaiming memory from any unmarked objects. These objects are unreachable and safe to collect.
+  </Step>
+</Steps>
+
+### How marking works
+
+The marking phase uses graph traversal to identify live objects:
+
+```javascript
+// Conceptual marking algorithm
+function mark(root) {
+  const worklist = [root];
+  const marked = new Set();
+  
+  while (worklist.length > 0) {
+    const obj = worklist.pop();
+    
+    if (marked.has(obj)) continue;
+    marked.add(obj);
+    
+    // Add all referenced objects to worklist
+    for (const ref of getReferences(obj)) {
+      worklist.push(ref);
+    }
+  }
+  
+  return marked;
+}
+```
+
+### Sweep implementation
+
+After marking completes, the sweep phase reclaims unmarked memory:
+
+```cpp
+// Simplified sweep algorithm (C++ pseudocode)
+void sweep(Heap* heap) {
+  for (HeapObject* obj : heap->all_objects()) {
+    if (!obj->is_marked()) {
+      heap->deallocate(obj);
+    } else {
+      obj->clear_mark(); // Reset for next GC cycle
+    }
+  }
+}
+```
+
+<Warning>
+  Mark-and-sweep requires pausing JavaScript execution during collection. This "stop-the-world" behavior can cause noticeable latency in applications, which is why modern engines use incremental and concurrent techniques.
+</Warning>
+
+## Generational collection
+
+Generational GC exploits the **weak generational hypothesis**: most objects die young. By dividing the heap into generations, engines can collect short-lived objects more frequently and efficiently.
+
+<Tabs>
+  <Tab title="Young generation">
+    ### Young generation (nursery)
+    
+    New objects are allocated in the young generation, which is small and collected frequently.
+    
+    **Characteristics:**
+    - Fast allocation (bump-pointer allocator)
+    - Frequent collection (minor GC)
+    - Low pause times (small heap region)
+    - High mortality rate (90%+ objects die young)
+    
+    **Collection process:**
+    
+    <Steps>
+      <Step title="Scavenge">
+        Copy live objects to a survivor space using Cheney's algorithm
+      </Step>
+      <Step title="Promotion">
+        Objects that survive multiple collections are promoted to old generation
+      </Step>
+      <Step title="Reclaim">
+        Entire young generation space is reclaimed and reset
+      </Step>
+    </Steps>
+  </Tab>
+  
+  <Tab title="Old generation">
+    ### Old generation (tenured)
+    
+    Long-lived objects are promoted to the old generation, which is larger and collected less frequently.
+    
+    **Characteristics:**
+    - Larger heap space
+    - Infrequent collection (major GC)
+    - Higher pause times
+    - Lower mortality rate
+    
+    **Collection strategy:**
+    
+    Uses mark-sweep or mark-compact algorithms:
+    - **Mark-sweep**: Leaves fragmentation but is faster
+    - **Mark-compact**: Compacts memory to eliminate fragmentation
+    
+    ```javascript
+    // Objects that reach old generation
+    const longLived = {
+      cache: new Map(),
+      config: { /* ... */ },
+      handlers: []
+    };
+    ```
+  </Tab>
+  
+  <Tab title="Write barriers">
+    ### Write barriers
+    
+    Generational collection requires tracking pointers from old to young objects ("remembered sets").
+    
+    **Why they're needed:**
+    
+    When collecting only the young generation, the collector needs to know about old-to-young references to avoid collecting live young objects.
+    
+    ```javascript
+    // Old generation object
+    const oldObj = { refs: [] };
+    
+    // Young generation object
+    const youngObj = { data: 42 };
+    
+    // This assignment requires a write barrier
+    oldObj.refs.push(youngObj);
+    // Engine records this cross-generational reference
+    ```
+    
+    **Implementation:**
+    
+    ```cpp
+    // Pseudocode for write barrier
+    void writeBarrier(Object* old_obj, Object* young_obj) {
+      if (in_old_generation(old_obj) && in_young_generation(young_obj)) {
+        remembered_set.add(old_obj);
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Incremental and concurrent GC
+
+To reduce pause times, modern engines break GC work into smaller increments and perform collection concurrently with JavaScript execution.
+
+### Incremental marking
+
+Instead of marking the entire heap at once, incremental GC interleaves small marking steps with JavaScript execution.
+
+<Steps>
+  <Step title="Start marking">
+    Begin marking from roots in a small time slice (1-5ms)
+  </Step>
+  
+  <Step title="Resume execution">
+    Let JavaScript run while maintaining marking progress
+  </Step>
+  
+  <Step title="Continue marking">
+    Resume marking in subsequent time slices
+  </Step>
+  
+  <Step title="Finish marking">
+    Complete marking when the object graph is fully traversed
+  </Step>
+</Steps>
+
+```javascript
+// Incremental marking maintains state across pauses
+class IncrementalMarker {
+  constructor() {
+    this.worklist = [];
+    this.marked = new Set();
+    this.bytesPerIncrement = 64 * 1024; // 64KB
+  }
+  
+  startMarking(roots) {
+    this.worklist = [...roots];
+  }
+  
+  // Called periodically
+  performIncrementalStep() {
+    const startTime = Date.now();
+    const timeLimit = 5; // 5ms budget
+    
+    while (this.worklist.length > 0 && Date.now() - startTime < timeLimit) {
+      const obj = this.worklist.pop();
+      if (this.marked.has(obj)) continue;
+      
+      this.marked.add(obj);
+      this.worklist.push(...getReferences(obj));
+    }
+    
+    return this.worklist.length === 0; // Done?
+  }
+}
+```
+
+<Info>
+  Incremental GC requires **tri-color marking** (white/gray/black) and write barriers to track objects modified during JavaScript execution between marking increments.
+</Info>
+
+### Concurrent marking
+
+Concurrent GC performs marking on separate threads while JavaScript continues executing on the main thread.
+
+**Benefits:**
+- Main thread pause times reduced to microseconds
+- Marking throughput increased with parallelism
+- Better utilization of multi-core CPUs
+
+**Challenges:**
+- Requires thread-safe data structures
+- Needs synchronization for object graph mutations
+- More complex write barrier implementation
+
+<Tabs>
+  <Tab title="Architecture">
+    ```
+    Main Thread              GC Thread 1           GC Thread 2
+    -----------              -----------           -----------
+    JS Execution             Concurrent            Concurrent
+         |                   Marking               Marking
+         |                      |                     |
+         v                      v                     v
+    [Write Barrier] -----> [Shared State] <----- [Shared State]
+         |                      |                     |
+         v                      v                     v
+    JS Execution             Continue              Continue
+         |                   Marking               Marking
+         v                      |                     |
+    Short Pause              Complete              Complete
+    (finalization)              |                     |
+    ```
+  </Tab>
+  
+  <Tab title="Implementation">
+    ```cpp
+    // Concurrent marking pseudocode
+    class ConcurrentMarker {
+      std::atomic<bool> marking_active{false};
+      ConcurrentQueue<Object*> worklist;
+      ConcurrentSet<Object*> marked;
+      
+      void startConcurrentMarking(std::vector<Object*> roots) {
+        worklist.push_all(roots);
+        marking_active = true;
+        
+        // Launch marking threads
+        for (int i = 0; i < num_threads; i++) {
+          threads.emplace_back([this]() { markingThread(); });
+        }
+      }
+      
+      void markingThread() {
+        while (marking_active) {
+          Object* obj = worklist.pop();
+          if (!obj) break;
+          
+          if (marked.insert(obj)) {
+            for (Object* ref : obj->references()) {
+              worklist.push(ref);
+            }
+          }
+        }
+      }
+    };
+    ```
+  </Tab>
+</Tabs>
+
+## WeakMap and WeakSet implementation
+
+Weak collections hold references that don't prevent garbage collection, enabling memory-conscious caching and metadata storage patterns.
+
+### How weak references work
+
+<Info>
+  Weak references are **invisible to the garbage collector**. An object is collectible if only weak references point to it.
+</Info>
+
+```javascript
+// Strong reference - prevents GC
+const strongMap = new Map();
+let obj = { data: 'important' };
+strongMap.set(obj, 'metadata');
+obj = null; // Object NOT collected (strongMap still references it)
+
+// Weak reference - allows GC
+const weakMap = new WeakMap();
+let obj2 = { data: 'important' };
+weakMap.set(obj2, 'metadata');
+obj2 = null; // Object CAN be collected (weakMap doesn't prevent GC)
+```
+
+### WeakMap use cases
+
+<Tabs>
+  <Tab title="Private data">
+    ```javascript
+    // Store private data without preventing GC
+    const privateData = new WeakMap();
+    
+    class User {
+      constructor(name) {
+        this.name = name;
+        privateData.set(this, {
+          password: 'hashed_password',
+          sessionToken: 'token_abc123'
+        });
+      }
+      
+      getPrivateData() {
+        return privateData.get(this);
+      }
+    }
+    
+    let user = new User('Alice');
+    // When user is collected, private data is automatically removed
+    ```
+  </Tab>
+  
+  <Tab title="Caching">
+    ```javascript
+    // Cache expensive computations without memory leaks
+    const computationCache = new WeakMap();
+    
+    function expensiveOperation(obj) {
+      if (computationCache.has(obj)) {
+        return computationCache.get(obj);
+      }
+      
+      const result = /* expensive computation */;
+      computationCache.set(obj, result);
+      return result;
+    }
+    
+    // Cache entries are automatically removed when keys are GC'd
+    ```
+  </Tab>
+  
+  <Tab title="Metadata">
+    ```javascript
+    // Attach metadata to DOM nodes without leaks
+    const elementMetadata = new WeakMap();
+    
+    function trackElement(element) {
+      elementMetadata.set(element, {
+        clicks: 0,
+        lastInteraction: Date.now()
+      });
+      
+      element.addEventListener('click', () => {
+        const meta = elementMetadata.get(element);
+        meta.clicks++;
+        meta.lastInteraction = Date.now();
+      });
+    }
+    
+    // Metadata automatically cleaned up when elements are removed from DOM
+    ```
+  </Tab>
+</Tabs>
+
+### Implementation details
+
+**Ephemeron tables:**
+
+WeakMap/WeakSet use ephemeron tables, where key liveness determines entry liveness.
+
+```cpp
+// Simplified ephemeron table marking
+void markEphemerons(EphemeronTable* table) {
+  bool changed = true;
+  
+  while (changed) {
+    changed = false;
+    
+    for (Entry& entry : table->entries) {
+      // If key is marked, mark value too
+      if (is_marked(entry.key) && !is_marked(entry.value)) {
+        mark(entry.value);
+        changed = true;
+      }
+    }
+  }
+  
+  // Remove entries with unmarked keys
+  table->entries.removeIf([](Entry& e) { return !is_marked(e.key); });
+}
+```
+
+<Warning>
+  WeakMap keys must be objects. Primitives cannot be weak keys because they don't have identity that can be collected.
+</Warning>
+
+## Memory profiling and leak detection
+
+Identifying and fixing memory issues requires understanding profiling tools and common leak patterns.
+
+### Using heap snapshots
+
+<Steps>
+  <Step title="Capture baseline">
+    Take a heap snapshot at application start or after initialization
+  </Step>
+  
+  <Step title="Exercise application">
+    Perform actions that might leak memory (create/destroy components, navigate)
+  </Step>
+  
+  <Step title="Capture comparison">
+    Take another snapshot and compare to baseline
+  </Step>
+  
+  <Step title="Analyze growth">
+    Look for object types that grew unexpectedly (should have been collected)
+  </Step>
+</Steps>
+
+### Common memory leak patterns
+
+<Tabs>
+  <Tab title="Event listeners">
+    ```javascript
+    // LEAK: Listener not removed
+    class Component {
+      constructor() {
+        window.addEventListener('resize', this.handleResize);
+        // Component instance leaks when removed from DOM
+      }
+      
+      handleResize() {
+        // this.component reference keeps component alive
+      }
+    }
+    
+    // FIX: Clean up listeners
+    class Component {
+      constructor() {
+        this.handleResize = this.handleResize.bind(this);
+        window.addEventListener('resize', this.handleResize);
+      }
+      
+      destroy() {
+        window.removeEventListener('resize', this.handleResize);
+      }
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Closures">
+    ```javascript
+    // LEAK: Closure captures large context
+    function createHandler(largeData) {
+      return function handler() {
+        // Entire largeData is kept alive even if only small part is used
+        console.log(largeData.id);
+      };
+    }
+    
+    // FIX: Extract only needed data
+    function createHandler(largeData) {
+      const id = largeData.id; // Copy primitive
+      return function handler() {
+        console.log(id); // Only id is captured, largeData can be GC'd
+      };
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Timers">
+    ```javascript
+    // LEAK: Timer not cleared
+    class DataFetcher {
+      startPolling() {
+        setInterval(() => {
+          this.fetchData(); // Keeps DataFetcher alive forever
+        }, 1000);
+      }
+    }
+    
+    // FIX: Clear timer on cleanup
+    class DataFetcher {
+      startPolling() {
+        this.pollInterval = setInterval(() => {
+          this.fetchData();
+        }, 1000);
+      }
+      
+      stopPolling() {
+        clearInterval(this.pollInterval);
+      }
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Caches">
+    ```javascript
+    // LEAK: Unbounded cache growth
+    const cache = new Map();
+    
+    function getData(key) {
+      if (!cache.has(key)) {
+        cache.set(key, expensiveFetch(key));
+      }
+      return cache.get(key);
+    }
+    
+    // FIX: Use LRU cache or WeakMap
+    const cache = new LRUCache({ max: 100 });
+    // or
+    const cache = new WeakMap(); // Keys can be GC'd
+    ```
+  </Tab>
+</Tabs>
+
+### Measuring GC impact
+
+```javascript
+// Track GC pauses
+if (performance.measureUserAgentSpecificMemory) {
+  const baseline = await performance.measureUserAgentSpecificMemory();
+  
+  // Perform operations
+  await heavyOperation();
+  
+  const after = await performance.measureUserAgentSpecificMemory();
+  
+  console.log('Memory delta:', {
+    bytes: after.bytes - baseline.bytes,
+    breakdown: after.breakdown
+  });
+}
+
+// Monitor GC timing (Chrome DevTools Protocol)
+const observer = new PerformanceObserver((list) => {
+  for (const entry of list.getEntries()) {
+    if (entry.entryType === 'measure') {
+      console.log(`GC pause: ${entry.duration}ms`);
+    }
+  }
+});
+observer.observe({ entryTypes: ['measure'] });
+```
+
+<Info>
+  Target GC pause times: < 16ms for 60fps applications, < 100ms for perceived smoothness. Use incremental/concurrent GC to stay within budget.
+</Info>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Event loop" icon="rotate" href="/js-engine/event-loop">
+    Learn how JavaScript schedules asynchronous work with microtasks and macrotasks
+  </Card>
+  <Card title="JIT optimization" icon="gauge-high" href="/js-engine/jit-optimization">
+    Explore how engines optimize hot code paths with just-in-time compilation
+  </Card>
+</CardGroup>

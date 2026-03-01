@@ -1,0 +1,202 @@
+---
+title: TCP basics and HTTP parsing
+description: Master the TCP three-way handshake, flow control mechanisms, and HTTP protocol parsing
+---
+
+## Introduction
+
+TCP (Transmission Control Protocol) is the backbone of reliable internet communication. Understanding how TCP establishes connections, manages data flow, and handles HTTP is crucial for building robust networked applications.
+
+<Info>
+This is part of Week 1 – Networking from Scratch in the "From CPU to the Browser" course.
+</Info>
+
+## Three-way handshake
+
+The TCP three-way handshake is the process used to establish a connection between a client and server.
+
+<Steps>
+  <Step title="SYN: Client initiates connection">
+    The client sends a SYN (synchronize) packet to the server with an initial sequence number. This indicates the client wants to establish a connection.
+
+    **Packet contains:**
+    - SYN flag set
+    - Initial sequence number (ISN)
+    - TCP options (window size, MSS, etc.)
+  </Step>
+
+  <Step title="SYN-ACK: Server responds">
+    The server responds with a SYN-ACK packet, acknowledging the client's request and sending its own sequence number.
+
+    **Packet contains:**
+    - SYN flag set
+    - ACK flag set
+    - Acknowledgment number (client's ISN + 1)
+    - Server's initial sequence number
+  </Step>
+
+  <Step title="ACK: Client confirms">
+    The client sends an ACK packet to acknowledge the server's response. The connection is now established and data transfer can begin.
+
+    **Packet contains:**
+    - ACK flag set
+    - Acknowledgment number (server's ISN + 1)
+  </Step>
+</Steps>
+
+<Warning>
+Each step in the handshake can fail due to network issues, firewall rules, or server unavailability. Always implement proper timeout and retry logic.
+</Warning>
+
+## Flow control
+
+TCP implements flow control to prevent overwhelming the receiver with data it can't process quickly enough.
+
+### Sliding window protocol
+
+The sliding window mechanism allows the sender to transmit multiple packets before receiving acknowledgments, improving efficiency.
+
+<Steps>
+  <Step title="Window size advertisement">
+    The receiver advertises its available buffer space (receive window) in every ACK packet.
+  </Step>
+
+  <Step title="Sender respects window">
+    The sender ensures the amount of unacknowledged data never exceeds the receiver's window size.
+  </Step>
+
+  <Step title="Dynamic adjustment">
+    As the receiver processes data and frees buffer space, the window size can grow. If the buffer fills up, the window shrinks.
+  </Step>
+</Steps>
+
+### Key flow control concepts
+
+<AccordionGroup>
+  <Accordion title="Window scaling">
+    TCP window scaling extends the maximum window size beyond 65,535 bytes, allowing for better performance on high-bandwidth networks.
+  </Accordion>
+
+  <Accordion title="Zero window">
+    When a receiver's buffer is full, it advertises a window size of zero, telling the sender to stop transmitting until buffer space becomes available.
+  </Accordion>
+
+  <Accordion title="Window probes">
+    When a zero window is received, the sender periodically sends small probe packets to check if the window has reopened.
+  </Accordion>
+</AccordionGroup>
+
+## HTTP basics
+
+HTTP (Hypertext Transfer Protocol) operates on top of TCP, providing the foundation for web communication.
+
+### Parsing HTTP headers
+
+HTTP messages consist of a request/response line, headers, and an optional body.
+
+<CodeGroup>
+```text HTTP Request
+GET /index.html HTTP/1.1
+Host: www.example.com
+User-Agent: Mozilla/5.0
+Accept: text/html
+Connection: keep-alive
+
+```
+
+```text HTTP Response
+HTTP/1.1 200 OK
+Content-Type: text/html
+Content-Length: 1024
+Connection: keep-alive
+
+<!DOCTYPE html>
+<html>...</html>
+```
+</CodeGroup>
+
+### Parsing steps
+
+<Steps>
+  <Step title="Parse request/status line">
+    Extract the HTTP method, path, version (for requests) or status code and message (for responses).
+  </Step>
+
+  <Step title="Parse headers">
+    Read header lines until an empty line is encountered. Each header is a key-value pair separated by a colon.
+  </Step>
+
+  <Step title="Determine body length">
+    Check Content-Length header or Transfer-Encoding to determine how to read the body.
+  </Step>
+
+  <Step title="Read body">
+    Read the message body based on the determined length or encoding method.
+  </Step>
+</Steps>
+
+### Chunked encoding
+
+Chunked transfer encoding allows a server to send data in chunks without knowing the total size upfront.
+
+<CodeGroup>
+```text Chunked Response
+HTTP/1.1 200 OK
+Transfer-Encoding: chunked
+
+1A
+This is the first chunk of data.
+14
+Another chunk here.
+0
+
+```
+</CodeGroup>
+
+**Format:**
+- Each chunk starts with its size in hexadecimal
+- Followed by `\r\n`
+- Then the chunk data
+- Followed by another `\r\n`
+- A chunk size of `0` indicates the end
+
+### Keep-alive connections
+
+HTTP keep-alive allows multiple requests/responses to be sent over a single TCP connection, reducing overhead.
+
+<Info>
+In HTTP/1.1, keep-alive is enabled by default. To close the connection, include `Connection: close` header.
+</Info>
+
+**Benefits:**
+- Reduces latency (no need for multiple handshakes)
+- Reduces CPU and memory usage
+- Enables HTTP pipelining
+- Improves page load times
+
+<Warning>
+Servers must properly manage keep-alive connections with timeouts to prevent resource exhaustion.
+</Warning>
+
+## Network debugging
+
+Use these tools to inspect TCP and HTTP traffic:
+
+<CardGroup cols={2}>
+  <Card title="tcpdump" icon="terminal">
+    Capture and analyze TCP handshakes and packet flow:
+    ```bash
+    tcpdump -i eth0 tcp port 80
+    ```
+  </Card>
+
+  <Card title="Wireshark" icon="magnifying-glass">
+    Visualize TCP streams and HTTP messages with a graphical interface. Follow TCP streams to see complete conversations.
+  </Card>
+</CardGroup>
+
+## Next steps
+
+<Card title="TLS and WebSockets" icon="arrow-right" href="/fundamentals/tls-websockets">
+  Learn about secure connections with TLS and real-time communication with WebSockets
+</Card>

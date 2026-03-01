@@ -1,0 +1,150 @@
+---
+title: Reconciliation
+description: Key-based reconciliation, heuristic strategies, and preparation for the Fiber architecture
+---
+
+Reconciliation is the algorithm React uses to diff one tree with another to determine which parts need to be changed. It's the process that makes Virtual DOM updates efficient.
+
+## Key-based reconciliation
+
+Keys are the primary mechanism React uses to identify which items have changed, been added, or removed in a list.
+
+<Steps>
+  <Step title="Without keys">
+    React compares elements position-by-position. Moving an item requires destroying and recreating elements, losing component state.
+  </Step>
+  
+  <Step title="With keys">
+    React uses keys to match elements between renders. Elements can be reordered efficiently while preserving component instances and state.
+  </Step>
+</Steps>
+
+### Key requirements
+
+<Info>
+  Keys must be **stable**, **predictable**, and **unique among siblings**. Using array indices as keys can cause subtle bugs when items are reordered or removed.
+</Info>
+
+```jsx
+// Bad - using index as key
+{items.map((item, index) => (
+  <Item key={index} data={item} />
+))}
+
+// Good - using stable identifier
+{items.map((item) => (
+  <Item key={item.id} data={item} />
+))}
+```
+
+## Reconciliation heuristics
+
+React implements three core heuristics to achieve O(n) complexity:
+
+### 1. Component type heuristic
+
+Elements of different component types produce fundamentally different trees.
+
+<Note>
+  When React encounters different component types at the same position, it unmounts the old tree completely and builds a new one from scratch—no attempt to diff.
+</Note>
+
+```jsx
+// Before render
+<Counter count={5} />
+
+// After render - complete replacement
+<Timer seconds={5} />
+```
+
+This means:
+- The old `Counter` component is unmounted
+- Its state is destroyed
+- The `Timer` component is mounted fresh
+- All child components are recreated
+
+### 2. Element type heuristic
+
+Similar to components, different element types trigger a rebuild.
+
+```jsx
+// Before
+<div className="container">
+  <span>Hello</span>
+</div>
+
+// After - div→article triggers rebuild
+<article className="container">
+  <span>Hello</span>
+</article>
+```
+
+Even though the structure seems similar, React will:
+1. Unmount the `div` and its children
+2. Create new DOM nodes for `article` and its children
+3. Mount the new tree
+
+### 3. List reconciliation heuristic
+
+For lists of children, React uses keys to match elements.
+
+<Steps>
+  <Step title="Building a key map">
+    React builds a map of keys to elements in the old list for O(1) lookups.
+  </Step>
+  
+  <Step title="Processing new list">
+    For each element in the new list, React checks if a matching key exists in the old list.
+  </Step>
+  
+  <Step title="Reuse or create">
+    If a key matches, reuse and update the element. If not, create a new one.
+  </Step>
+  
+  <Step title="Cleanup">
+    Any old elements not matched in the new list are unmounted.
+  </Step>
+</Steps>
+
+## Performance implications
+
+| Scenario | Without Keys | With Keys |
+|----------|-------------|----------|
+| Add item to start | O(n) unmount + mount | O(1) insert |
+| Remove item | O(n) DOM operations | O(1) remove |
+| Reorder items | O(n) destroy + recreate | O(n) move operations |
+| Update one item | O(n) comparison | O(1) lookup + update |
+
+<Info>
+  While keys dramatically improve list performance, they have overhead. Only use keys for dynamic lists—static lists can rely on position-based reconciliation.
+</Info>
+
+## Fiber architecture preparation
+
+The reconciliation heuristics lay the groundwork for React's Fiber architecture, which adds:
+
+- **Interruptible work**: Break reconciliation into units that can be paused
+- **Priority-based updates**: Handle different updates with different urgency
+- **Incremental rendering**: Spread work across multiple frames
+- **Better error boundaries**: Catch and handle errors during reconciliation
+
+<Note>
+  Fiber doesn't change the reconciliation heuristics—it changes **when** and **how** reconciliation work is scheduled and executed.
+</Note>
+
+## Implementation guidelines
+
+When implementing a reconciliation algorithm:
+
+1. **Build the heuristics first**: Get component type, element type, and list reconciliation working
+2. **Profile extensively**: Measure both JavaScript execution time and DOM operation counts
+3. **Handle edge cases**: Fragments, portals, null, boolean, and array children
+4. **Prepare for scheduling**: Structure your reconciliation work to be pausable
+
+<Info>
+  In the Week 6 project, these heuristics form the core of your Virtual DOM library's reconciliation algorithm, which you'll stress test with 10,000+ dynamic nodes.
+</Info>
+
+## Next steps
+
+With reconciliation heuristics in place, the next challenge is coordinating when updates happen—batching multiple state changes together and scheduling them efficiently with requestAnimationFrame.

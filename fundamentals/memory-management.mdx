@@ -1,0 +1,261 @@
+---
+title: Memory management
+description: Understand stack vs heap allocation, virtual memory systems, and the memory layout of running programs including text, data, stack, and heap segments
+---
+
+## Stack vs heap
+
+Programs use two primary memory regions with fundamentally different allocation strategies:
+
+<Tabs>
+  <Tab title="Stack">
+    ### Stack memory
+    
+    The stack is a contiguous, automatically managed memory region that grows and shrinks as functions are called and return.
+    
+    **Characteristics:**
+    - **LIFO (Last In, First Out)** allocation order
+    - **Automatic management** - no manual allocation/deallocation
+    - **Fast allocation** - just increment/decrement stack pointer
+    - **Limited size** - typically 1-8 MB per thread
+    - **Predictable lifetime** - variables freed when function returns
+    
+    **Used for:**
+    - Local variables
+    - Function parameters
+    - Return addresses
+    - Saved registers
+    
+    ```c
+    void function() {
+        int x = 10;          // Allocated on stack
+        char buffer[256];    // Allocated on stack
+        // Automatically freed when function returns
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Heap">
+    ### Heap memory
+    
+    The heap is a larger, dynamically managed memory pool for allocations with unpredictable lifetimes.
+    
+    **Characteristics:**
+    - **Manual management** - explicit allocation and deallocation required
+    - **Flexible lifetime** - can persist beyond function scope
+    - **Slower allocation** - requires finding suitable free blocks
+    - **Large capacity** - limited mainly by available system memory
+    - **Fragmentation risk** - can develop holes over time
+    
+    **Used for:**
+    - Dynamic data structures
+    - Objects with unknown size at compile time
+    - Long-lived objects
+    - Large allocations
+    
+    ```c
+    void function() {
+        int* ptr = malloc(1000 * sizeof(int));  // Allocated on heap
+        // ... use ptr ...
+        free(ptr);  // Must manually free
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+Stack overflow occurs when too much stack space is consumed (deep recursion, large local arrays). Heap exhaustion happens when the system runs out of available memory. Both cause program crashes.
+</Warning>
+
+## Virtual memory basics
+
+Virtual memory creates an abstraction layer between physical RAM and the memory addresses used by programs.
+
+### Key concepts
+
+<Steps>
+  <Step title="Address translation">
+    Each process has its own virtual address space. The memory management unit (MMU) translates virtual addresses to physical addresses using page tables.
+  </Step>
+  
+  <Step title="Paging">
+    Memory is divided into fixed-size pages (typically 4 KB). The OS can map any virtual page to any physical page, enabling:
+    - **Process isolation** - processes cannot access each other's memory
+    - **Demand paging** - load pages from disk only when needed
+    - **Memory overcommitment** - allocate more virtual memory than physical RAM
+  </Step>
+  
+  <Step title="Page faults">
+    When a process accesses a virtual address not currently in physical memory, a page fault occurs. The OS handles this by:
+    1. Pausing the process
+    2. Loading the required page from disk
+    3. Updating page tables
+    4. Resuming execution
+  </Step>
+</Steps>
+
+<Info>
+Virtual memory allows running programs larger than available RAM by swapping pages between memory and disk. However, excessive paging (thrashing) severely degrades performance.
+</Info>
+
+### Benefits of virtual memory
+
+- **Memory protection** - each process has isolated address space
+- **Simplified memory management** - programs see contiguous memory
+- **Efficient memory use** - share common code/libraries between processes
+- **Larger address space** - programs can use more memory than physically available
+
+## Memory layout
+
+A running process's virtual memory is organized into distinct segments:
+
+```
+High addresses
+┌─────────────────┐
+│     Stack       │  ← Grows downward
+│       ↓         │
+├─────────────────┤
+│                 │
+│   (unmapped)    │  ← Flexible space
+│                 │
+├─────────────────┤
+│       ↑         │
+│     Heap        │  ← Grows upward
+├─────────────────┤
+│   BSS segment   │  ← Uninitialized data
+├─────────────────┤
+│  Data segment   │  ← Initialized data
+├─────────────────┤
+│  Text segment   │  ← Program code
+└─────────────────┘
+Low addresses
+```
+
+### Segment descriptions
+
+<AccordionGroup>
+  <Accordion title="Text segment" icon="file-code">
+    Contains the executable program code (machine instructions).
+    
+    - **Read-only and executable** - prevents code modification
+    - **Shareable** - multiple processes can share same code
+    - **Fixed size** - determined at compile time
+    
+    ```c
+    int add(int a, int b) {  // This function code lives in text segment
+        return a + b;
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Data segment" icon="database">
+    Stores initialized global and static variables.
+    
+    - **Read-write** - variables can be modified
+    - **Fixed size** - known at compile time
+    - **Initialized** - contains specific values from source code
+    
+    ```c
+    int global_var = 42;        // Data segment
+    static int count = 0;       // Data segment
+    ```
+  </Accordion>
+  
+  <Accordion title="BSS segment" icon="empty-set">
+    Contains uninitialized global and static variables (Block Started by Symbol).
+    
+    - **Zero-initialized** - all bytes set to 0 at program start
+    - **Not stored in executable** - saves disk space
+    - **Fixed size** - known at compile time
+    
+    ```c
+    int uninitialized_array[1000];  // BSS segment
+    static int counter;             // BSS segment
+    ```
+  </Accordion>
+  
+  <Accordion title="Heap segment" icon="layer-group">
+    Dynamic memory allocated at runtime.
+    
+    - **Grows upward** - toward higher addresses
+    - **Managed by allocator** - malloc/free in C, new/delete in C++
+    - **Flexible size** - grows as needed (up to limits)
+    
+    ```c
+    void* ptr = malloc(100);  // Allocated from heap
+    ```
+  </Accordion>
+  
+  <Accordion title="Stack segment" icon="layer-minus">
+    Function call frames and local variables.
+    
+    - **Grows downward** - toward lower addresses
+    - **Automatically managed** - push/pop on call/return
+    - **Limited size** - typically 1-8 MB
+    
+    ```c
+    void func() {
+        int local = 5;  // Allocated on stack
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Pointers and memory alignment
+
+### Pointers
+
+Pointers store memory addresses, enabling direct memory manipulation:
+
+```c
+int value = 42;
+int* ptr = &value;    // ptr holds the address of value
+*ptr = 100;           // Dereference: modify value through pointer
+```
+
+<Warning>
+Invalid pointer operations (null pointer dereference, use-after-free, buffer overflow) cause undefined behavior and are common sources of security vulnerabilities.
+</Warning>
+
+### Simple memory alignment
+
+CPUs access memory most efficiently when data is aligned to its natural boundaries:
+
+- **Alignment requirement** - address must be a multiple of data size
+- **Performance impact** - unaligned access may require multiple memory operations
+- **Padding** - compilers insert padding bytes to maintain alignment
+
+```c
+struct Example {
+    char c;      // 1 byte
+    // 3 bytes padding
+    int i;       // 4 bytes (aligned to 4-byte boundary)
+    char d;      // 1 byte
+    // 3 bytes padding
+};  // Total: 12 bytes (not 6)
+```
+
+<Tip>
+Reorder struct members from largest to smallest to minimize padding and reduce memory footprint.
+</Tip>
+
+## System calls overview
+
+Programs interact with the operating system through system calls to perform privileged operations:
+
+- **Process control** - fork, exec, exit, wait
+- **File operations** - open, read, write, close
+- **Memory management** - brk, mmap, munmap
+- **Communication** - pipe, socket, send, receive
+
+<Info>
+System calls involve a context switch from user mode to kernel mode, which is relatively expensive. Minimize system calls in performance-critical code.
+</Info>
+
+```c
+// Example: reading a file involves system call
+int fd = open("file.txt", O_RDONLY);  // System call
+char buffer[1024];
+read(fd, buffer, sizeof(buffer));     // System call
+close(fd);                             // System call
+```

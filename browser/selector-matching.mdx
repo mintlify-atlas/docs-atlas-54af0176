@@ -1,0 +1,1088 @@
+---
+title: 'Selector matching'
+description: 'Deep dive into CSS selector matching algorithms, specificity calculation, cascade resolution, and style inheritance in browser engines.'
+keywords: ['selector matching', 'CSS specificity', 'cascade', 'inheritance', 'style computation', 'CSSOM']
+---
+
+Selector matching is the process of determining which CSS rules apply to each element in the DOM. This involves matching selectors, calculating specificity, resolving the cascade, and computing inherited styles.
+
+## Selector matching with specificity calculation
+
+The selector matching algorithm determines whether a selector matches a given element and calculates the selector's specificity for cascade resolution.
+
+### Matching algorithm
+
+Selectors are matched from right to left for performance optimization:
+
+<Steps>
+  <Step title="Start with the rightmost selector">
+    Begin matching with the rightmost simple selector (the "key selector"). This is the selector that directly matches the target element.
+    
+    For example, in `div.container > p.highlight`, start by checking if the element is a `p` with class `highlight`.
+  </Step>
+  
+  <Step title="Check the key selector">
+    If the key selector doesn't match the element, immediately reject the entire selector. This early rejection is crucial for performance.
+    
+    **Why right-to-left?** Most selectors won't match most elements. Starting from the right allows quick rejection without traversing the DOM tree.
+  </Step>
+  
+  <Step title="Process combinators and remaining selectors">
+    If the key selector matches, work leftward through combinators:
+    - **Descendant combinator** (` `): Check ancestors
+    - **Child combinator** (`>`): Check parent
+    - **Adjacent sibling combinator** (`+`): Check previous sibling
+    - **General sibling combinator** (`~`): Check all previous siblings
+  </Step>
+  
+  <Step title="Validate the entire selector chain">
+    Continue until the entire selector is validated or any part fails to match.
+  </Step>
+</Steps>
+
+<Info>
+Right-to-left matching is counterintuitive but significantly faster than left-to-right. The key selector acts as a filter, eliminating most elements before expensive DOM traversal occurs.
+</Info>
+
+<CodeGroup>
+
+```cpp selector_matching.cpp
+class SelectorMatcher {
+public:
+    bool matches(const Selector& selector, Element* element) {
+        // Start from the rightmost (key) selector
+        auto current = element;
+        auto selectorComponents = selector.components;
+        
+        // Match from right to left
+        for (int i = selectorComponents.size() - 1; i >= 0; i--) {
+            const auto& component = selectorComponents[i];
+            
+            // Check if current element matches this component
+            if (!matchesSimpleSelector(component.simpleSelector, current)) {
+                return false;
+            }
+            
+            // If not the leftmost component, handle combinator
+            if (i > 0) {
+                const auto& combinator = component.combinator;
+                current = findMatchingAncestor(combinator, 
+                                               selectorComponents[i - 1].simpleSelector, 
+                                               current);
+                if (!current) {
+                    return false;
+                }
+            }
+        }
+        
+        return true;
+    }
+    
+    bool matchesSimpleSelector(const SimpleSelector& selector, Element* element) {
+        // Check tag name
+        if (!selector.tagName.empty() && selector.tagName != "*") {
+            if (element->tagName() != selector.tagName) {
+                return false;
+            }
+        }
+        
+        // Check ID
+        if (!selector.id.empty()) {
+            if (element->id() != selector.id) {
+                return false;
+            }
+        }
+        
+        // Check classes
+        for (const auto& className : selector.classes) {
+            if (!element->hasClass(className)) {
+                return false;
+            }
+        }
+        
+        // Check attributes
+        for (const auto& attr : selector.attributes) {
+            if (!matchesAttribute(attr, element)) {
+                return false;
+            }
+        }
+        
+        // Check pseudo-classes
+        for (const auto& pseudo : selector.pseudoClasses) {
+            if (!matchesPseudoClass(pseudo, element)) {
+                return false;
+            }
+        }
+        
+        return true;
+    }
+    
+    Element* findMatchingAncestor(Combinator combinator, 
+                                   const SimpleSelector& selector,
+                                   Element* element) {
+        switch (combinator) {
+            case Combinator::Descendant: {
+                // Check all ancestors
+                auto ancestor = element->parentElement();
+                while (ancestor) {
+                    if (matchesSimpleSelector(selector, ancestor)) {
+                        return ancestor;
+                    }
+                    ancestor = ancestor->parentElement();
+                }
+                return nullptr;
+            }
+            
+            case Combinator::Child: {
+                // Check only the parent
+                auto parent = element->parentElement();
+                if (parent && matchesSimpleSelector(selector, parent)) {
+                    return parent;
+                }
+                return nullptr;
+            }
+            
+            case Combinator::AdjacentSibling: {
+                // Check previous sibling only
+                auto sibling = element->previousElementSibling();
+                if (sibling && matchesSimpleSelector(selector, sibling)) {
+                    return sibling;
+                }
+                return nullptr;
+            }
+            
+            case Combinator::GeneralSibling: {
+                // Check all previous siblings
+                auto sibling = element->previousElementSibling();
+                while (sibling) {
+                    if (matchesSimpleSelector(selector, sibling)) {
+                        return sibling;
+                    }
+                    sibling = sibling->previousElementSibling();
+                }
+                return nullptr;
+            }
+        }
+        
+        return nullptr;
+    }
+};
+```
+
+```rust selector_matching.rs
+struct SelectorMatcher;
+
+impl SelectorMatcher {
+    fn matches(&self, selector: &Selector, element: &Element) -> bool {
+        // Start from the rightmost (key) selector
+        let mut current = Some(element);
+        let components = &selector.components;
+        
+        // Match from right to left
+        for i in (0..components.len()).rev() {
+            let component = &components[i];
+            
+            let current_elem = match current {
+                Some(elem) => elem,
+                None => return false,
+            };
+            
+            // Check if current element matches this component
+            if !self.matches_simple_selector(&component.simple_selector, current_elem) {
+                return false;
+            }
+            
+            // If not the leftmost component, handle combinator
+            if i > 0 {
+                let combinator = component.combinator;
+                current = self.find_matching_ancestor(
+                    combinator,
+                    &components[i - 1].simple_selector,
+                    current_elem,
+                );
+                if current.is_none() {
+                    return false;
+                }
+            }
+        }
+        
+        true
+    }
+    
+    fn matches_simple_selector(&self, selector: &SimpleSelector, element: &Element) -> bool {
+        // Check tag name
+        if !selector.tag_name.is_empty() && selector.tag_name != "*" {
+            if element.tag_name() != selector.tag_name {
+                return false;
+            }
+        }
+        
+        // Check ID
+        if !selector.id.is_empty() {
+            if element.id() != Some(&selector.id) {
+                return false;
+            }
+        }
+        
+        // Check classes
+        for class_name in &selector.classes {
+            if !element.has_class(class_name) {
+                return false;
+            }
+        }
+        
+        // Check attributes
+        for attr in &selector.attributes {
+            if !self.matches_attribute(attr, element) {
+                return false;
+            }
+        }
+        
+        // Check pseudo-classes
+        for pseudo in &selector.pseudo_classes {
+            if !self.matches_pseudo_class(pseudo, element) {
+                return false;
+            }
+        }
+        
+        true
+    }
+    
+    fn find_matching_ancestor(
+        &self,
+        combinator: Combinator,
+        selector: &SimpleSelector,
+        element: &Element,
+    ) -> Option<&Element> {
+        match combinator {
+            Combinator::Descendant => {
+                // Check all ancestors
+                let mut ancestor = element.parent_element();
+                while let Some(anc) = ancestor {
+                    if self.matches_simple_selector(selector, anc) {
+                        return Some(anc);
+                    }
+                    ancestor = anc.parent_element();
+                }
+                None
+            }
+            
+            Combinator::Child => {
+                // Check only the parent
+                let parent = element.parent_element();
+                if let Some(p) = parent {
+                    if self.matches_simple_selector(selector, p) {
+                        return Some(p);
+                    }
+                }
+                None
+            }
+            
+            Combinator::AdjacentSibling => {
+                // Check previous sibling only
+                let sibling = element.previous_element_sibling();
+                if let Some(sib) = sibling {
+                    if self.matches_simple_selector(selector, sib) {
+                        return Some(sib);
+                    }
+                }
+                None
+            }
+            
+            Combinator::GeneralSibling => {
+                // Check all previous siblings
+                let mut sibling = element.previous_element_sibling();
+                while let Some(sib) = sibling {
+                    if self.matches_simple_selector(selector, sib) {
+                        return Some(sib);
+                    }
+                    sibling = sib.previous_element_sibling();
+                }
+                None
+            }
+        }
+    }
+}
+```
+
+</CodeGroup>
+
+### Specificity calculation
+
+When multiple rules match an element, specificity determines which declarations take precedence. Specificity is calculated as a three-part value: (a, b, c).
+
+<Info>
+Specificity is often written as a three-digit number (e.g., 1-2-3) but it's actually three separate counters. A selector with specificity (0, 1, 0) always beats (0, 0, 100).
+</Info>
+
+<AccordionGroup>
+  <Accordion title="Specificity components">
+    Specificity consists of three counters:
+    
+    - **a**: Number of ID selectors
+    - **b**: Number of class selectors, attribute selectors, and pseudo-classes
+    - **c**: Number of type selectors and pseudo-elements
+    
+    Inline styles have even higher specificity (1, 0, 0, 0), and `!important` overrides everything.
+  </Accordion>
+  
+  <Accordion title="Calculation rules">
+    Count each type of selector:
+    
+    | Selector | a | b | c | Specificity |
+    |----------|---|---|---|-------------|
+    | `*` | 0 | 0 | 0 | (0, 0, 0) |
+    | `p` | 0 | 0 | 1 | (0, 0, 1) |
+    | `.class` | 0 | 1 | 0 | (0, 1, 0) |
+    | `#id` | 1 | 0 | 0 | (1, 0, 0) |
+    | `p.class` | 0 | 1 | 1 | (0, 1, 1) |
+    | `div p` | 0 | 0 | 2 | (0, 0, 2) |
+    | `#id .class p` | 1 | 1 | 1 | (1, 1, 1) |
+    | `[type="text"]` | 0 | 1 | 0 | (0, 1, 0) |
+    | `:hover` | 0 | 1 | 0 | (0, 1, 0) |
+    | `::before` | 0 | 0 | 1 | (0, 0, 1) |
+  </Accordion>
+  
+  <Accordion title="Comparison algorithm">
+    To compare two specificities:
+    
+    1. Compare the **a** values. Higher wins.
+    2. If **a** values are equal, compare **b** values. Higher wins.
+    3. If **b** values are equal, compare **c** values. Higher wins.
+    4. If all values are equal, the later rule (in source order) wins.
+    
+    Examples:
+    - (0, 1, 0) beats (0, 0, 100) — one class beats 100 type selectors
+    - (1, 0, 0) beats (0, 100, 100) — one ID beats 100 classes and 100 types
+    - (0, 2, 1) beats (0, 1, 5) — two classes beat one class, regardless of types
+  </Accordion>
+</AccordionGroup>
+
+<CodeGroup>
+
+```cpp specificity.cpp
+struct Specificity {
+    int a; // ID selectors
+    int b; // Class, attribute, pseudo-class selectors
+    int c; // Type and pseudo-element selectors
+    
+    Specificity() : a(0), b(0), c(0) {}
+    Specificity(int a, int b, int c) : a(a), b(b), c(c) {}
+    
+    bool operator<(const Specificity& other) const {
+        if (a != other.a) return a < other.a;
+        if (b != other.b) return b < other.b;
+        return c < other.c;
+    }
+    
+    bool operator>(const Specificity& other) const {
+        return other < *this;
+    }
+    
+    bool operator==(const Specificity& other) const {
+        return a == other.a && b == other.b && c == other.c;
+    }
+};
+
+class SpecificityCalculator {
+public:
+    Specificity calculate(const Selector& selector) {
+        Specificity spec;
+        
+        for (const auto& component : selector.components) {
+            calculateSimpleSelector(component.simpleSelector, spec);
+        }
+        
+        return spec;
+    }
+    
+private:
+    void calculateSimpleSelector(const SimpleSelector& selector, Specificity& spec) {
+        // ID selector
+        if (!selector.id.empty()) {
+            spec.a++;
+        }
+        
+        // Class selectors
+        spec.b += selector.classes.size();
+        
+        // Attribute selectors
+        spec.b += selector.attributes.size();
+        
+        // Pseudo-classes
+        for (const auto& pseudo : selector.pseudoClasses) {
+            if (pseudo == ":not" || pseudo == ":is" || pseudo == ":where") {
+                // Special handling: calculate specificity of argument
+                // :not() and :is() take the specificity of their argument
+                // :where() always has 0 specificity
+            }
+            else {
+                spec.b++;
+            }
+        }
+        
+        // Type selector
+        if (!selector.tagName.empty() && selector.tagName != "*") {
+            spec.c++;
+        }
+        
+        // Pseudo-elements
+        spec.c += selector.pseudoElements.size();
+    }
+};
+```
+
+```rust specificity.rs
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Specificity {
+    a: u32, // ID selectors
+    b: u32, // Class, attribute, pseudo-class selectors
+    c: u32, // Type and pseudo-element selectors
+}
+
+impl Specificity {
+    fn new() -> Self {
+        Specificity { a: 0, b: 0, c: 0 }
+    }
+}
+
+impl PartialOrd for Specificity {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Specificity {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match self.a.cmp(&other.a) {
+            std::cmp::Ordering::Equal => match self.b.cmp(&other.b) {
+                std::cmp::Ordering::Equal => self.c.cmp(&other.c),
+                other => other,
+            },
+            other => other,
+        }
+    }
+}
+
+struct SpecificityCalculator;
+
+impl SpecificityCalculator {
+    fn calculate(&self, selector: &Selector) -> Specificity {
+        let mut spec = Specificity::new();
+        
+        for component in &selector.components {
+            self.calculate_simple_selector(&component.simple_selector, &mut spec);
+        }
+        
+        spec
+    }
+    
+    fn calculate_simple_selector(&self, selector: &SimpleSelector, spec: &mut Specificity) {
+        // ID selector
+        if !selector.id.is_empty() {
+            spec.a += 1;
+        }
+        
+        // Class selectors
+        spec.b += selector.classes.len() as u32;
+        
+        // Attribute selectors
+        spec.b += selector.attributes.len() as u32;
+        
+        // Pseudo-classes
+        for pseudo in &selector.pseudo_classes {
+            match pseudo.as_str() {
+                ":not" | ":is" => {
+                    // Special handling: calculate specificity of argument
+                    // :not() and :is() take the specificity of their argument
+                }
+                ":where" => {
+                    // :where() always has 0 specificity
+                }
+                _ => {
+                    spec.b += 1;
+                }
+            }
+        }
+        
+        // Type selector
+        if !selector.tag_name.is_empty() && selector.tag_name != "*" {
+            spec.c += 1;
+        }
+        
+        // Pseudo-elements
+        spec.c += selector.pseudo_elements.len() as u32;
+    }
+}
+```
+
+</CodeGroup>
+
+<Warning>
+Don't think of specificity as a decimal number (0-1-10 is not "eleven"). It's three separate counters, so (0, 1, 0) always beats (0, 0, 1000).
+</Warning>
+
+<Tip>
+**Best practices for managing specificity:**
+
+- Keep specificity low by avoiding IDs in CSS
+- Use classes instead of complex descendant selectors
+- Avoid `!important` except for utility classes
+- Use CSS methodologies (BEM, SMACSS) to maintain consistent specificity
+- Leverage `:where()` for zero-specificity selectors when needed
+</Tip>
+
+## Cascade resolution
+
+The cascade is the algorithm that combines declarations from different sources and resolves conflicts when multiple rules set the same property on an element.
+
+### Cascade algorithm steps
+
+<Steps>
+  <Step title="Filter declarations">
+    Collect all declarations that apply to the element based on selector matching. Include declarations from:
+    - User agent stylesheets (browser defaults)
+    - User stylesheets
+    - Author stylesheets (your CSS)
+    - Inline styles
+  </Step>
+  
+  <Step title="Sort by origin and importance">
+    Declarations are sorted by origin in this order (highest priority first):
+    
+    1. Transition declarations
+    2. Important user agent declarations (`!important` in browser defaults)
+    3. Important user declarations
+    4. Important author declarations
+    5. Animation declarations
+    6. Normal author declarations
+    7. Normal user declarations
+    8. Normal user agent declarations
+  </Step>
+  
+  <Step title="Sort by specificity">
+    Within the same origin and importance level, declarations are sorted by selector specificity. Higher specificity wins.
+  </Step>
+  
+  <Step title="Sort by source order">
+    If origin, importance, and specificity are all equal, the declaration that appears later in the source code wins.
+  </Step>
+  
+  <Step title="Apply winning declarations">
+    For each property, the declaration that wins the cascade is applied to the element.
+  </Step>
+</Steps>
+
+<Info>
+The cascade is why CSS is called "Cascading" Style Sheets. Multiple stylesheets cascade together, with conflicts resolved according to the cascade algorithm.
+</Info>
+
+<CodeGroup>
+
+```cpp cascade.cpp
+struct Declaration {
+    std::string property;
+    CSSValue value;
+    bool important;
+    Specificity specificity;
+    Origin origin;
+    int sourceOrder;
+};
+
+enum class Origin {
+    UserAgent,
+    User,
+    Author,
+    Animation,
+    Transition
+};
+
+class CascadeResolver {
+public:
+    std::map<std::string, CSSValue> resolveCascade(
+        Element* element,
+        const std::vector<StyleRule>& matchingRules
+    ) {
+        // Collect all declarations
+        std::vector<Declaration> declarations;
+        
+        for (const auto& rule : matchingRules) {
+            Specificity spec = calculateSpecificity(rule.selector);
+            
+            for (const auto& decl : rule.declarations) {
+                declarations.push_back({
+                    decl.property,
+                    decl.value,
+                    decl.important,
+                    spec,
+                    rule.origin,
+                    rule.sourceOrder
+                });
+            }
+        }
+        
+        // Sort declarations according to cascade rules
+        std::sort(declarations.begin(), declarations.end(), 
+                  [](const Declaration& a, const Declaration& b) {
+            // First: compare importance and origin
+            int priorityA = getCascadePriority(a);
+            int priorityB = getCascadePriority(b);
+            if (priorityA != priorityB) {
+                return priorityA < priorityB;
+            }
+            
+            // Second: compare specificity
+            if (a.specificity != b.specificity) {
+                return a.specificity < b.specificity;
+            }
+            
+            // Third: compare source order
+            return a.sourceOrder < b.sourceOrder;
+        });
+        
+        // Build final property map (later declarations override earlier)
+        std::map<std::string, CSSValue> computedStyles;
+        for (const auto& decl : declarations) {
+            computedStyles[decl.property] = decl.value;
+        }
+        
+        return computedStyles;
+    }
+    
+private:
+    int getCascadePriority(const Declaration& decl) {
+        // Higher number = higher priority
+        if (decl.origin == Origin::Transition) {
+            return 8;
+        }
+        if (decl.important) {
+            switch (decl.origin) {
+                case Origin::UserAgent: return 7;
+                case Origin::User: return 6;
+                case Origin::Author: return 5;
+                default: return 0;
+            }
+        }
+        if (decl.origin == Origin::Animation) {
+            return 4;
+        }
+        // Normal declarations
+        switch (decl.origin) {
+            case Origin::Author: return 3;
+            case Origin::User: return 2;
+            case Origin::UserAgent: return 1;
+            default: return 0;
+        }
+    }
+};
+```
+
+```rust cascade.rs
+struct Declaration {
+    property: String,
+    value: CSSValue,
+    important: bool,
+    specificity: Specificity,
+    origin: Origin,
+    source_order: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Origin {
+    UserAgent,
+    User,
+    Author,
+    Animation,
+    Transition,
+}
+
+struct CascadeResolver;
+
+impl CascadeResolver {
+    fn resolve_cascade(
+        &self,
+        element: &Element,
+        matching_rules: &[StyleRule],
+    ) -> HashMap<String, CSSValue> {
+        // Collect all declarations
+        let mut declarations = Vec::new();
+        
+        for rule in matching_rules {
+            let spec = self.calculate_specificity(&rule.selector);
+            
+            for decl in &rule.declarations {
+                declarations.push(Declaration {
+                    property: decl.property.clone(),
+                    value: decl.value.clone(),
+                    important: decl.important,
+                    specificity: spec,
+                    origin: rule.origin,
+                    source_order: rule.source_order,
+                });
+            }
+        }
+        
+        // Sort declarations according to cascade rules
+        declarations.sort_by(|a, b| {
+            // First: compare importance and origin
+            let priority_a = self.get_cascade_priority(a);
+            let priority_b = self.get_cascade_priority(b);
+            match priority_a.cmp(&priority_b) {
+                std::cmp::Ordering::Equal => {
+                    // Second: compare specificity
+                    match a.specificity.cmp(&b.specificity) {
+                        std::cmp::Ordering::Equal => {
+                            // Third: compare source order
+                            a.source_order.cmp(&b.source_order)
+                        }
+                        other => other,
+                    }
+                }
+                other => other,
+            }
+        });
+        
+        // Build final property map (later declarations override earlier)
+        let mut computed_styles = HashMap::new();
+        for decl in declarations {
+            computed_styles.insert(decl.property, decl.value);
+        }
+        
+        computed_styles
+    }
+    
+    fn get_cascade_priority(&self, decl: &Declaration) -> u32 {
+        // Higher number = higher priority
+        if decl.origin == Origin::Transition {
+            return 8;
+        }
+        if decl.important {
+            return match decl.origin {
+                Origin::UserAgent => 7,
+                Origin::User => 6,
+                Origin::Author => 5,
+                _ => 0,
+            };
+        }
+        if decl.origin == Origin::Animation {
+            return 4;
+        }
+        // Normal declarations
+        match decl.origin {
+            Origin::Author => 3,
+            Origin::User => 2,
+            Origin::UserAgent => 1,
+            _ => 0,
+        }
+    }
+}
+```
+
+</CodeGroup>
+
+### Important cascade behaviors
+
+<AccordionGroup>
+  <Accordion title="!important reverses the cascade">
+    Normal declarations follow the order: user agent → user → author.
+    
+    Important declarations reverse this: author `!important` → user `!important` → user agent `!important`.
+    
+    This means a user's `!important` declaration beats an author's `!important` declaration, allowing users to override site styles for accessibility.
+  </Accordion>
+  
+  <Accordion title="Animations and transitions have special priority">
+    CSS transitions have the highest priority (they temporarily override even `!important`).
+    
+    CSS animations sit between `!important` declarations and normal declarations.
+    
+    This allows smooth transitions even when styles change dynamically.
+  </Accordion>
+  
+  <Accordion title="Inline styles have high specificity">
+    Inline styles (e.g., `<div style="color: red">`) are treated as having specificity (1, 0, 0, 0), higher than any selector-based rule.
+    
+    Only `!important` declarations can override inline styles.
+  </Accordion>
+</AccordionGroup>
+
+## Inheritance
+
+Some CSS properties are inherited by default, meaning child elements automatically receive values from their parent unless explicitly overridden.
+
+### Inherited vs. non-inherited properties
+
+<Tabs>
+  <Tab title="Inherited properties">
+    These properties automatically cascade to descendants:
+    
+    **Typography:**
+    - `color`
+    - `font-family`
+    - `font-size`
+    - `font-weight`
+    - `font-style`
+    - `line-height`
+    - `letter-spacing`
+    - `text-align`
+    - `text-indent`
+    - `text-transform`
+    - `white-space`
+    
+    **Lists:**
+    - `list-style`
+    - `list-style-type`
+    - `list-style-position`
+    
+    **Other:**
+    - `visibility`
+    - `cursor`
+    - `quotes`
+    
+    ```css
+    body {
+      font-family: Arial, sans-serif;
+      color: #333;
+    }
+    
+    /* All descendants inherit these values */
+    p { /* Inherits font-family and color from body */ }
+    ```
+  </Tab>
+  
+  <Tab title="Non-inherited properties">
+    These properties do NOT automatically inherit:
+    
+    **Box model:**
+    - `width`, `height`
+    - `margin`, `padding`
+    - `border`
+    
+    **Positioning:**
+    - `position`
+    - `top`, `right`, `bottom`, `left`
+    - `z-index`
+    
+    **Display:**
+    - `display`
+    - `float`
+    - `clear`
+    
+    **Background:**
+    - `background-color`
+    - `background-image`
+    - All background properties
+    
+    ```css
+    div {
+      background-color: blue;
+      padding: 20px;
+    }
+    
+    /* Child elements do NOT inherit background or padding */
+    div p { /* No blue background or padding */ }
+    ```
+  </Tab>
+  
+  <Tab title="Controlling inheritance">
+    CSS provides keywords to control inheritance:
+    
+    ```css
+    .element {
+      /* Force inheritance even for non-inherited properties */
+      background-color: inherit;
+      
+      /* Use the initial (default) value */
+      color: initial;
+      
+      /* Inherit if parent has value, otherwise use initial */
+      font-size: unset;
+      
+      /* Reset to browser default (ignores cascade) */
+      all: revert;
+    }
+    ```
+    
+    **Keyword meanings:**
+    - `inherit`: Always take the parent's value
+    - `initial`: Use the CSS specification's default value
+    - `unset`: Inherit if normally inherited, otherwise initial
+    - `revert`: Use browser/user stylesheet value
+  </Tab>
+</Tabs>
+
+### Inheritance implementation
+
+<CodeGroup>
+
+```cpp inheritance.cpp
+class StyleComputer {
+public:
+    std::map<std::string, CSSValue> computeStyle(
+        Element* element,
+        const std::map<std::string, CSSValue>& cascadedStyles
+    ) {
+        std::map<std::string, CSSValue> computedStyles = cascadedStyles;
+        
+        // Get parent's computed styles
+        auto parent = element->parentElement();
+        std::map<std::string, CSSValue> parentStyles;
+        if (parent) {
+            parentStyles = parent->computedStyles();
+        }
+        
+        // Handle inheritance for all properties
+        for (const auto& prop : getAllCSSProperties()) {
+            // If property wasn't set by cascade
+            if (computedStyles.find(prop) == computedStyles.end()) {
+                if (isInheritedProperty(prop)) {
+                    // Inherit from parent
+                    if (parentStyles.find(prop) != parentStyles.end()) {
+                        computedStyles[prop] = parentStyles[prop];
+                    } else {
+                        computedStyles[prop] = getInitialValue(prop);
+                    }
+                } else {
+                    // Use initial value
+                    computedStyles[prop] = getInitialValue(prop);
+                }
+            }
+            
+            // Handle special keywords
+            if (computedStyles[prop].isKeyword()) {
+                std::string keyword = computedStyles[prop].asString();
+                
+                if (keyword == "inherit") {
+                    if (parentStyles.find(prop) != parentStyles.end()) {
+                        computedStyles[prop] = parentStyles[prop];
+                    } else {
+                        computedStyles[prop] = getInitialValue(prop);
+                    }
+                }
+                else if (keyword == "initial") {
+                    computedStyles[prop] = getInitialValue(prop);
+                }
+                else if (keyword == "unset") {
+                    if (isInheritedProperty(prop)) {
+                        // Act like 'inherit'
+                        if (parentStyles.find(prop) != parentStyles.end()) {
+                            computedStyles[prop] = parentStyles[prop];
+                        } else {
+                            computedStyles[prop] = getInitialValue(prop);
+                        }
+                    } else {
+                        // Act like 'initial'
+                        computedStyles[prop] = getInitialValue(prop);
+                    }
+                }
+            }
+        }
+        
+        return computedStyles;
+    }
+    
+private:
+    bool isInheritedProperty(const std::string& property) {
+        static const std::set<std::string> inheritedProps = {
+            "color", "font-family", "font-size", "font-weight",
+            "font-style", "line-height", "text-align", "visibility",
+            "cursor", "letter-spacing", "word-spacing", "text-indent",
+            "text-transform", "white-space", "list-style", "quotes"
+            // ... more inherited properties
+        };
+        return inheritedProps.find(property) != inheritedProps.end();
+    }
+};
+```
+
+```rust inheritance.rs
+struct StyleComputer;
+
+impl StyleComputer {
+    fn compute_style(
+        &self,
+        element: &Element,
+        cascaded_styles: &HashMap<String, CSSValue>,
+    ) -> HashMap<String, CSSValue> {
+        let mut computed_styles = cascaded_styles.clone();
+        
+        // Get parent's computed styles
+        let parent_styles = element
+            .parent_element()
+            .map(|p| p.computed_styles())
+            .unwrap_or_default();
+        
+        // Handle inheritance for all properties
+        for prop in self.get_all_css_properties() {
+            // If property wasn't set by cascade
+            if !computed_styles.contains_key(&prop) {
+                if self.is_inherited_property(&prop) {
+                    // Inherit from parent
+                    if let Some(value) = parent_styles.get(&prop) {
+                        computed_styles.insert(prop.clone(), value.clone());
+                    } else {
+                        computed_styles.insert(prop.clone(), self.get_initial_value(&prop));
+                    }
+                } else {
+                    // Use initial value
+                    computed_styles.insert(prop.clone(), self.get_initial_value(&prop));
+                }
+            }
+            
+            // Handle special keywords
+            if let Some(value) = computed_styles.get(&prop) {
+                if let Some(keyword) = value.as_keyword() {
+                    let new_value = match keyword.as_str() {
+                        "inherit" => parent_styles
+                            .get(&prop)
+                            .cloned()
+                            .unwrap_or_else(|| self.get_initial_value(&prop)),
+                        
+                        "initial" => self.get_initial_value(&prop),
+                        
+                        "unset" => {
+                            if self.is_inherited_property(&prop) {
+                                // Act like 'inherit'
+                                parent_styles
+                                    .get(&prop)
+                                    .cloned()
+                                    .unwrap_or_else(|| self.get_initial_value(&prop))
+                            } else {
+                                // Act like 'initial'
+                                self.get_initial_value(&prop)
+                            }
+                        }
+                        
+                        _ => continue,
+                    };
+                    
+                    computed_styles.insert(prop.clone(), new_value);
+                }
+            }
+        }
+        
+        computed_styles
+    }
+    
+    fn is_inherited_property(&self, property: &str) -> bool {
+        matches!(
+            property,
+            "color" | "font-family" | "font-size" | "font-weight" |
+            "font-style" | "line-height" | "text-align" | "visibility" |
+            "cursor" | "letter-spacing" | "word-spacing" | "text-indent" |
+            "text-transform" | "white-space" | "list-style" | "quotes"
+            // ... more inherited properties
+        )
+    }
+}
+```
+
+</CodeGroup>
+
+<Tip>
+**Inheritance performance tip:** When computing styles for many elements, compute parent styles first. This allows efficient inheritance without re-computing parent values for each child.
+</Tip>
+
+<Check>
+You now have a complete understanding of CSS selector matching, specificity calculation, cascade resolution, and style inheritance. These mechanisms work together to determine the final computed styles for each element in the document.
+</Check>

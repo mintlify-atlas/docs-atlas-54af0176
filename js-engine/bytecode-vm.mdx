@@ -1,0 +1,648 @@
+---
+title: Bytecode and VM execution
+description: Design a bytecode instruction set and implement a stack-based virtual machine to execute JavaScript code efficiently
+---
+
+Transform Abstract Syntax Trees into compact bytecode and execute them in a stack-based virtual machine. This is the core execution engine that brings JavaScript programs to life.
+
+## Overview
+
+Bytecode is an intermediate representation between high-level source code and machine code. A virtual machine (VM) interprets bytecode instructions to execute programs.
+
+<Info>
+Bytecode execution provides a balance between interpretation speed and implementation complexity, making it ideal for dynamic languages like JavaScript.
+</Info>
+
+## Bytecode design and instruction set
+
+A well-designed instruction set is crucial for efficient VM execution. Each instruction should be simple, compact, and map directly to common operations.
+
+### Instruction format
+
+Bytecode instructions typically use a fixed or variable-length format:
+
+<CodeGroup>
+```cpp Instruction definition
+enum class Opcode : uint8_t {
+    // Stack operations
+    PUSH_CONSTANT,    // Push constant to stack
+    POP,              // Pop value from stack
+    
+    // Arithmetic operations
+    ADD,              // Pop two values, push sum
+    SUB,              // Pop two values, push difference
+    MUL,              // Pop two values, push product
+    DIV,              // Pop two values, push quotient
+    MOD,              // Pop two values, push remainder
+    
+    // Comparison operations
+    EQ,               // Equal
+    NEQ,              // Not equal
+    LT,               // Less than
+    GT,               // Greater than
+    LTE,              // Less than or equal
+    GTE,              // Greater than or equal
+    
+    // Logical operations
+    AND,              // Logical AND
+    OR,               // Logical OR
+    NOT,              // Logical NOT
+    
+    // Variable operations
+    LOAD_VAR,         // Load variable to stack
+    STORE_VAR,        // Store stack top to variable
+    LOAD_GLOBAL,      // Load global variable
+    STORE_GLOBAL,     // Store to global variable
+    
+    // Control flow
+    JUMP,             // Unconditional jump
+    JUMP_IF_FALSE,    // Jump if stack top is false
+    JUMP_IF_TRUE,     // Jump if stack top is true
+    
+    // Function operations
+    CALL,             // Call function
+    RETURN,           // Return from function
+    
+    // Object operations
+    NEW_OBJECT,       // Create new object
+    GET_PROPERTY,     // Get object property
+    SET_PROPERTY,     // Set object property
+    
+    // Array operations
+    NEW_ARRAY,        // Create new array
+    GET_ELEMENT,      // Get array element
+    SET_ELEMENT,      // Set array element
+    
+    // Special
+    HALT              // Stop execution
+};
+
+struct Instruction {
+    Opcode opcode;
+    uint32_t operand;  // Optional operand
+};
+```
+
+```cpp Bytecode buffer
+class BytecodeBuffer {
+private:
+    std::vector<uint8_t> code;
+    std::vector<Value> constants;
+    
+public:
+    void emitOpcode(Opcode op) {
+        code.push_back(static_cast<uint8_t>(op));
+    }
+    
+    void emitOperand(uint32_t operand) {
+        // Emit 4-byte operand
+        code.push_back((operand >> 24) & 0xFF);
+        code.push_back((operand >> 16) & 0xFF);
+        code.push_back((operand >> 8) & 0xFF);
+        code.push_back(operand & 0xFF);
+    }
+    
+    uint32_t addConstant(const Value& value) {
+        constants.push_back(value);
+        return constants.size() - 1;
+    }
+    
+    const uint8_t* getCode() const { return code.data(); }
+    size_t getCodeSize() const { return code.size(); }
+    const Value& getConstant(uint32_t index) const {
+        return constants[index];
+    }
+};
+```
+</CodeGroup>
+
+### Instruction categories
+
+<AccordionGroup>
+  <Accordion title="Stack manipulation">
+    Instructions for managing the operand stack:
+    
+    - `PUSH_CONSTANT`: Push a constant value onto the stack
+    - `POP`: Remove the top value from the stack
+    - `DUP`: Duplicate the top stack value
+    - `SWAP`: Swap the top two stack values
+  </Accordion>
+  
+  <Accordion title="Arithmetic and logic">
+    Binary and unary operations:
+    
+    - `ADD`, `SUB`, `MUL`, `DIV`, `MOD`: Arithmetic operations
+    - `EQ`, `NEQ`, `LT`, `GT`, `LTE`, `GTE`: Comparison operations
+    - `AND`, `OR`, `NOT`: Logical operations
+    - `NEG`: Unary negation
+  </Accordion>
+  
+  <Accordion title="Variable access">
+    Loading and storing variables:
+    
+    - `LOAD_VAR`, `STORE_VAR`: Local variable access
+    - `LOAD_GLOBAL`, `STORE_GLOBAL`: Global variable access
+    - `LOAD_UPVALUE`, `STORE_UPVALUE`: Closure variable access
+  </Accordion>
+  
+  <Accordion title="Control flow">
+    Branching and jumping:
+    
+    - `JUMP`: Unconditional jump to offset
+    - `JUMP_IF_FALSE`: Conditional jump (for if statements, loops)
+    - `JUMP_IF_TRUE`: Conditional jump (for logical OR)
+    - `LOOP`: Jump backward (for loop constructs)
+  </Accordion>
+  
+  <Accordion title="Function calls">
+    Function invocation and returns:
+    
+    - `CALL`: Call function with N arguments
+    - `RETURN`: Return from function with value
+    - `CLOSURE`: Create closure with upvalues
+  </Accordion>
+</AccordionGroup>
+
+## Compiling AST to bytecode
+
+The compiler traverses the AST and emits bytecode instructions:
+
+<CodeGroup>
+```cpp Bytecode compiler
+class Compiler : public ASTVisitor {
+private:
+    BytecodeBuffer& bytecode;
+    SymbolTable& symbols;
+    
+public:
+    Compiler(BytecodeBuffer& bc, SymbolTable& syms)
+        : bytecode(bc), symbols(syms) {}
+    
+    void visit(BinaryExpression& node) override {
+        // Compile left operand
+        node.left->accept(*this);
+        
+        // Compile right operand
+        node.right->accept(*this);
+        
+        // Emit operator instruction
+        if (node.op == "+") {
+            bytecode.emitOpcode(Opcode::ADD);
+        } else if (node.op == "-") {
+            bytecode.emitOpcode(Opcode::SUB);
+        } else if (node.op == "*") {
+            bytecode.emitOpcode(Opcode::MUL);
+        } else if (node.op == "/") {
+            bytecode.emitOpcode(Opcode::DIV);
+        }
+        // ... more operators
+    }
+    
+    void visit(Literal& node) override {
+        // Add constant to constant pool
+        uint32_t index = bytecode.addConstant(node.value);
+        
+        // Emit PUSH_CONSTANT instruction
+        bytecode.emitOpcode(Opcode::PUSH_CONSTANT);
+        bytecode.emitOperand(index);
+    }
+    
+    void visit(Identifier& node) override {
+        // Look up variable in symbol table
+        Symbol* sym = symbols.resolve(node.name);
+        
+        if (sym->isGlobal()) {
+            bytecode.emitOpcode(Opcode::LOAD_GLOBAL);
+        } else {
+            bytecode.emitOpcode(Opcode::LOAD_VAR);
+        }
+        bytecode.emitOperand(sym->index);
+    }
+};
+```
+
+```cpp Control flow compilation
+void Compiler::visit(IfStatement& node) {
+    // Compile condition
+    node.condition->accept(*this);
+    
+    // Emit conditional jump (placeholder offset)
+    bytecode.emitOpcode(Opcode::JUMP_IF_FALSE);
+    size_t elseJump = bytecode.getCodeSize();
+    bytecode.emitOperand(0); // Placeholder
+    
+    // Compile then branch
+    node.thenBranch->accept(*this);
+    
+    // Emit jump over else branch
+    bytecode.emitOpcode(Opcode::JUMP);
+    size_t endJump = bytecode.getCodeSize();
+    bytecode.emitOperand(0); // Placeholder
+    
+    // Patch else jump to here
+    bytecode.patchJump(elseJump);
+    
+    // Compile else branch if present
+    if (node.elseBranch) {
+        node.elseBranch->accept(*this);
+    }
+    
+    // Patch end jump to here
+    bytecode.patchJump(endJump);
+}
+
+void Compiler::visit(WhileStatement& node) {
+    // Mark loop start
+    size_t loopStart = bytecode.getCodeSize();
+    
+    // Compile condition
+    node.condition->accept(*this);
+    
+    // Emit conditional jump to exit
+    bytecode.emitOpcode(Opcode::JUMP_IF_FALSE);
+    size_t exitJump = bytecode.getCodeSize();
+    bytecode.emitOperand(0); // Placeholder
+    
+    // Compile loop body
+    node.body->accept(*this);
+    
+    // Jump back to start
+    bytecode.emitOpcode(Opcode::LOOP);
+    bytecode.emitOperand(bytecode.getCodeSize() - loopStart);
+    
+    // Patch exit jump
+    bytecode.patchJump(exitJump);
+}
+```
+
+```cpp Function compilation
+void Compiler::visit(FunctionDeclaration& node) {
+    // Create new compiler for function body
+    BytecodeBuffer functionCode;
+    Compiler functionCompiler(functionCode, symbols);
+    
+    // Enter function scope
+    symbols.enterScope();
+    
+    // Define parameters
+    for (const auto& param : node.parameters) {
+        symbols.define(param, Symbol::Kind::Parameter);
+    }
+    
+    // Compile function body
+    node.body->accept(functionCompiler);
+    
+    // Emit return if not present
+    functionCode.emitOpcode(Opcode::PUSH_CONSTANT);
+    functionCode.emitOperand(functionCode.addConstant(Value::undefined()));
+    functionCode.emitOpcode(Opcode::RETURN);
+    
+    // Exit function scope
+    symbols.exitScope();
+    
+    // Store compiled function
+    uint32_t index = bytecode.addConstant(Value::function(functionCode));
+    bytecode.emitOpcode(Opcode::PUSH_CONSTANT);
+    bytecode.emitOperand(index);
+    bytecode.emitOpcode(Opcode::STORE_GLOBAL);
+    bytecode.emitOperand(symbols.resolve(node.name)->index);
+}
+```
+</CodeGroup>
+
+<Warning>
+Jump offsets must be carefully calculated and patched after emitting forward jumps, as the target location isn't known until the code is generated.
+</Warning>
+
+## Stack-based VM execution
+
+The virtual machine maintains an operand stack and executes instructions sequentially.
+
+### VM architecture
+
+<Steps>
+  <Step title="Instruction pointer">
+    Tracks the current position in bytecode, advancing after each instruction.
+  </Step>
+  
+  <Step title="Operand stack">
+    Holds intermediate values during computation. Operations pop operands and push results.
+  </Step>
+  
+  <Step title="Call frames">
+    Maintains function call context including return address and local variables.
+  </Step>
+  
+  <Step title="Global environment">
+    Stores global variables and functions accessible from anywhere.
+  </Step>
+</Steps>
+
+### VM implementation
+
+<CodeGroup>
+```cpp Virtual machine
+class VirtualMachine {
+private:
+    std::vector<Value> stack;
+    std::vector<CallFrame> frames;
+    std::unordered_map<std::string, Value> globals;
+    
+    const uint8_t* ip;  // Instruction pointer
+    
+    void push(const Value& value) {
+        stack.push_back(value);
+    }
+    
+    Value pop() {
+        Value value = stack.back();
+        stack.pop_back();
+        return value;
+    }
+    
+    Value peek(int distance = 0) {
+        return stack[stack.size() - 1 - distance];
+    }
+    
+    uint32_t readOperand() {
+        uint32_t operand = (ip[0] << 24) | (ip[1] << 16) | 
+                          (ip[2] << 8) | ip[3];
+        ip += 4;
+        return operand;
+    }
+    
+public:
+    void execute(const BytecodeBuffer& bytecode);
+};
+```
+
+```cpp Execution loop
+void VirtualMachine::execute(const BytecodeBuffer& bytecode) {
+    ip = bytecode.getCode();
+    const uint8_t* end = ip + bytecode.getCodeSize();
+    
+    while (ip < end) {
+        Opcode instruction = static_cast<Opcode>(*ip++);
+        
+        switch (instruction) {
+            case Opcode::PUSH_CONSTANT: {
+                uint32_t index = readOperand();
+                push(bytecode.getConstant(index));
+                break;
+            }
+            
+            case Opcode::POP:
+                pop();
+                break;
+            
+            case Opcode::ADD: {
+                Value b = pop();
+                Value a = pop();
+                push(a + b);
+                break;
+            }
+            
+            case Opcode::SUB: {
+                Value b = pop();
+                Value a = pop();
+                push(a - b);
+                break;
+            }
+            
+            case Opcode::MUL: {
+                Value b = pop();
+                Value a = pop();
+                push(a * b);
+                break;
+            }
+            
+            case Opcode::DIV: {
+                Value b = pop();
+                Value a = pop();
+                push(a / b);
+                break;
+            }
+            
+            // ... more cases
+        }
+    }
+}
+```
+
+```cpp Control flow execution
+case Opcode::JUMP: {
+    uint32_t offset = readOperand();
+    ip = bytecode.getCode() + offset;
+    break;
+}
+
+case Opcode::JUMP_IF_FALSE: {
+    uint32_t offset = readOperand();
+    Value condition = peek();
+    if (condition.isFalsy()) {
+        ip = bytecode.getCode() + offset;
+    }
+    break;
+}
+
+case Opcode::JUMP_IF_TRUE: {
+    uint32_t offset = readOperand();
+    Value condition = peek();
+    if (condition.isTruthy()) {
+        ip = bytecode.getCode() + offset;
+    }
+    break;
+}
+
+case Opcode::LOOP: {
+    uint32_t offset = readOperand();
+    ip -= offset;
+    break;
+}
+```
+
+```cpp Function call execution
+case Opcode::CALL: {
+    uint32_t argCount = readOperand();
+    Value callee = peek(argCount);
+    
+    // Create new call frame
+    CallFrame frame;
+    frame.function = callee.asFunction();
+    frame.returnAddress = ip;
+    frame.stackBase = stack.size() - argCount - 1;
+    frames.push_back(frame);
+    
+    // Jump to function code
+    ip = frame.function->code.getCode();
+    break;
+}
+
+case Opcode::RETURN: {
+    Value result = pop();
+    
+    // Restore previous frame
+    CallFrame frame = frames.back();
+    frames.pop_back();
+    
+    // Clean up stack
+    while (stack.size() > frame.stackBase) {
+        stack.pop_back();
+    }
+    
+    // Push return value
+    push(result);
+    
+    // Restore instruction pointer
+    ip = frame.returnAddress;
+    break;
+}
+```
+</CodeGroup>
+
+<Info>
+Stack-based VMs are simpler to implement than register-based VMs but may require more instructions for complex operations.
+</Info>
+
+## Optimization techniques
+
+### Instruction dispatch optimization
+
+Different techniques can speed up instruction dispatch:
+
+<Tabs>
+  <Tab title="Switch statement">
+    Traditional approach using a switch statement. Simple but may not be optimally compiled.
+    
+    ```cpp
+    switch (opcode) {
+        case Opcode::ADD: /* ... */ break;
+        case Opcode::SUB: /* ... */ break;
+        // ...
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Computed goto">
+    GCC extension that provides faster dispatch using jump tables.
+    
+    ```cpp
+    static void* dispatchTable[] = {
+        &&OP_ADD, &&OP_SUB, &&OP_MUL, /* ... */
+    };
+    
+    #define DISPATCH() goto *dispatchTable[*ip++]
+    
+    OP_ADD:
+        // Execute ADD
+        DISPATCH();
+    
+    OP_SUB:
+        // Execute SUB
+        DISPATCH();
+    ```
+  </Tab>
+  
+  <Tab title="Direct threading">
+    Store instruction handlers directly in bytecode for fastest dispatch.
+    
+    ```cpp
+    void** code = new void*[codeSize];
+    code[0] = &&OP_PUSH_CONSTANT;
+    code[1] = (void*)constantIndex;
+    code[2] = &&OP_ADD;
+    
+    void** pc = code;
+    goto *(*pc++);
+    ```
+  </Tab>
+</Tabs>
+
+### Value representation
+
+Efficient value representation is critical for performance:
+
+<CodeGroup>
+```cpp NaN boxing
+// Use IEEE 754 double NaN space to encode types
+union Value {
+    double number;
+    uint64_t bits;
+    
+    // Use quiet NaN range for non-number types
+    static constexpr uint64_t QNAN = 0x7ffc000000000000;
+    static constexpr uint64_t SIGN_BIT = 0x8000000000000000;
+    
+    bool isNumber() const {
+        return (bits & QNAN) != QNAN;
+    }
+    
+    bool isObject() const {
+        return (bits & (QNAN | SIGN_BIT)) == (QNAN | SIGN_BIT);
+    }
+    
+    Object* asObject() const {
+        return reinterpret_cast<Object*>(bits & ~(QNAN | SIGN_BIT));
+    }
+};
+```
+
+```cpp Pointer tagging
+// Use lower bits for type tags
+class Value {
+private:
+    uintptr_t bits;
+    
+    static constexpr int TAG_BITS = 3;
+    static constexpr uintptr_t TAG_MASK = (1 << TAG_BITS) - 1;
+    
+    enum Tag : uintptr_t {
+        INT = 0,      // Small integers
+        DOUBLE = 1,   // Heap-allocated doubles
+        OBJECT = 2,   // Object pointer
+        STRING = 3,   // String pointer
+        // ...
+    };
+    
+public:
+    bool isInt() const { return (bits & TAG_MASK) == INT; }
+    int asInt() const { return static_cast<int>(bits >> TAG_BITS); }
+};
+```
+</CodeGroup>
+
+## Performance considerations
+
+<CardGroup cols={2}>
+  <Card title="Inline caching" icon="bolt">
+    Cache property lookups and method calls for faster repeated access
+  </Card>
+  
+  <Card title="Constant folding" icon="compress">
+    Evaluate constant expressions at compile time rather than runtime
+  </Card>
+  
+  <Card title="Dead code elimination" icon="trash">
+    Remove unreachable code to reduce bytecode size
+  </Card>
+  
+  <Card title="Peephole optimization" icon="magnifying-glass">
+    Replace instruction sequences with more efficient equivalents
+  </Card>
+</CardGroup>
+
+<Warning>
+Premature optimization can lead to more complex code without significant benefits. Profile first, then optimize hot paths.
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Closures and prototypes" icon="link" href="/js-engine/closures-prototypes">
+    Implement closures with environment chains and prototype-based inheritance
+  </Card>
+  
+  <Card title="Parsing and AST" icon="code" href="/js-engine/parsing-ast">
+    Learn about lexical analysis, tokenization, and AST construction
+  </Card>
+</CardGroup>

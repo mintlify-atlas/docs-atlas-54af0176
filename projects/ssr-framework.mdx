@@ -1,0 +1,292 @@
+---
+title: SSR framework
+description: Build a server-side rendering framework with streaming, hydration, and file-based routing
+---
+
+<Info>
+  This project is part of **Week 7** and implements modern SSR patterns including streaming and selective hydration.
+</Info>
+
+## Overview
+
+Build a production-ready server-side rendering framework with streaming capabilities, progressive hydration, and file-based routing. This project implements the core architecture of Next.js-style frameworks.
+
+## Project requirements
+
+<CardGroup cols={2}>
+  <Card title="Streaming" icon="water">
+    renderToPipeableStream implementation
+  </Card>
+  <Card title="Hydration" icon="droplet">
+    Progressive and selective hydration
+  </Card>
+  <Card title="Routing" icon="route">
+    File-based routing system
+  </Card>
+  <Card title="Data fetching" icon="database">
+    SSG and ISR support
+  </Card>
+</CardGroup>
+
+## Core components
+
+<Steps>
+  <Step title="Server-side rendering">
+    Implement SSR with streaming:
+    
+    - renderToString vs renderToPipeableStream
+    - Progressive hydration and selective hydration
+    - Double pass problem and solutions
+    - Edge rendering vs Node rendering
+    
+    Streaming enables faster time to first byte and progressive page loading.
+  </Step>
+  
+  <Step title="File-based routing">
+    Build Next.js-style routing:
+    
+    - File-based routing implementation
+    - Dynamic routes with parameters
+    - Nested layouts and route groups
+    - API routes and middleware
+    
+    The file system structure directly maps to URL routes.
+  </Step>
+  
+  <Step title="Data fetching patterns">
+    Implement data fetching strategies:
+    
+    - SSG: getStaticProps build-time execution
+    - ISR: revalidation and stale-while-revalidate
+    - SSR: per-request data fetching
+    - Client-side fetching integration
+    
+    Different strategies optimize for different use cases.
+  </Step>
+  
+  <Step title="Module bundling">
+    Build bundling and code splitting:
+    
+    - Module bundling and code splitting
+    - Route-based code splitting
+    - Component-based lazy loading
+    - Shared chunk optimization
+    
+    Ensure optimal bundle sizes and loading performance.
+  </Step>
+</Steps>
+
+## Server-side rendering strategies
+
+<AccordionGroup>
+  <Accordion title="renderToString">
+    Synchronous rendering - waits for entire page before sending. Simple but slower time to first byte.
+    
+    ```javascript
+    const html = renderToString(<App />);
+    res.send(html);
+    ```
+  </Accordion>
+  
+  <Accordion title="renderToPipeableStream">
+    Streaming rendering - sends HTML as it's generated. Much faster time to first byte, progressive loading.
+    
+    ```javascript
+    const { pipe } = renderToPipeableStream(<App />, {
+      onShellReady() {
+        pipe(res);
+      }
+    });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Hydration strategies
+
+<Note>
+  Hydration attaches event handlers to server-rendered HTML to make it interactive.
+</Note>
+
+### Progressive hydration
+
+Hydrate components progressively as they become visible:
+
+- **Shell first**: Hydrate critical above-the-fold content immediately
+- **Lazy hydration**: Defer non-critical components
+- **On-demand hydration**: Hydrate on user interaction
+
+### Selective hydration
+
+<CardGroup cols={2}>
+  <Card title="Suspense boundaries" icon="layer-group">
+    Hydrate around Suspense boundaries independently.
+  </Card>
+  <Card title="Priority-based" icon="ranking-star">
+    Hydrate high-priority components first.
+  </Card>
+  <Card title="Interrupt and resume" icon="clock">
+    Interrupt hydration for user interactions.
+  </Card>
+  <Card title="Streaming" icon="water">
+    Stream HTML and hydrate as it arrives.
+  </Card>
+</CardGroup>
+
+## Double pass problem
+
+<Info>
+  The double pass problem occurs when server and client render differently, causing hydration mismatches.
+</Info>
+
+### Solutions
+
+**Deterministic rendering**
+Ensure server and client render exactly the same initial HTML.
+
+**Suppress hydration warnings**
+Use `suppressHydrationWarning` for unavoidable differences (timestamps, random IDs).
+
+**Two-pass rendering**
+Render twice on client - first to match server, then to add client-only features.
+
+## File-based routing
+
+<Steps>
+  <Step title="Directory structure">
+    Map file system to routes:
+    
+    ```
+    pages/
+      index.js          → /
+      about.js          → /about
+      blog/
+        index.js        → /blog
+        [slug].js       → /blog/:slug
+    ```
+  </Step>
+  
+  <Step title="Dynamic routes">
+    Use brackets for dynamic segments: `[id].js`, `[...slug].js`
+  </Step>
+  
+  <Step title="API routes">
+    Handle API endpoints in `pages/api/` directory.
+  </Step>
+  
+  <Step title="Middleware">
+    Process requests before routing with middleware functions.
+  </Step>
+</Steps>
+
+## Data fetching strategies
+
+<AccordionGroup>
+  <Accordion title="Static Site Generation (SSG)">
+    Generate HTML at build time using `getStaticProps`.
+    
+    - Fastest performance - pre-rendered HTML
+    - Best for content that doesn't change often
+    - Can be cached on CDN
+    
+    ```javascript
+    export async function getStaticProps() {
+      const data = await fetchData();
+      return { props: { data } };
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Incremental Static Regeneration (ISR)">
+    Revalidate static pages after deployment.
+    
+    - Combines benefits of static and dynamic
+    - Stale-while-revalidate pattern
+    - Regenerate pages in background
+    
+    ```javascript
+    export async function getStaticProps() {
+      return {
+        props: { data },
+        revalidate: 60 // Revalidate every 60 seconds
+      };
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Server-Side Rendering (SSR)">
+    Render HTML per-request using `getServerSideProps`.
+    
+    - Always fresh data
+    - Slower than static (server processing on every request)
+    - Use for highly dynamic content
+    
+    ```javascript
+    export async function getServerSideProps(context) {
+      const data = await fetchData(context.params);
+      return { props: { data } };
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Edge vs Node rendering
+
+<CardGroup cols={2}>
+  <Card title="Edge rendering" icon="bolt">
+    Run at edge locations close to users. Ultra-low latency, limited runtime.
+  </Card>
+  <Card title="Node rendering" icon="server">
+    Run on traditional servers. Full Node.js runtime, slightly higher latency.
+  </Card>
+</CardGroup>
+
+## Code splitting
+
+<Note>
+  Split code into smaller chunks to improve initial load time and enable lazy loading.
+</Note>
+
+### Splitting strategies
+
+**Route-based splitting**
+Automatic code split per route - each page loads only its required code.
+
+**Component-based splitting**
+Lazy load components with dynamic imports:
+
+```javascript
+const HeavyComponent = lazy(() => import('./HeavyComponent'));
+```
+
+**Shared chunks**
+Extract common dependencies into shared chunks to avoid duplication.
+
+## Deliverables
+
+- SSR framework with streaming support (renderToPipeableStream)
+- Progressive hydration implementation
+- Selective hydration with Suspense boundaries
+- File-based routing system with dynamic routes
+- API routes and middleware support
+- SSG with getStaticProps
+- ISR with revalidation
+- SSR with getServerSideProps
+- Code splitting (route-based and component-based)
+- Edge and Node rendering support
+- Example app demonstrating all features
+- Performance comparison of different strategies
+
+## Success criteria
+
+- Streaming SSR shows content progressively
+- Time to first byte is optimized with streaming
+- Hydration works without mismatches
+- Progressive hydration defers non-critical components
+- Selective hydration prioritizes user interactions
+- File-based routing correctly maps files to routes
+- Dynamic routes handle parameters properly
+- SSG generates static HTML at build time
+- ISR revalidates pages in background
+- Code splitting reduces initial bundle size
+- Each route loads only necessary code
+- Framework handles edge cases gracefully

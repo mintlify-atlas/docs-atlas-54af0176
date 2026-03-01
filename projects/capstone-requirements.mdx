@@ -1,0 +1,396 @@
+---
+title: Capstone requirements
+description: Complete specifications, deliverables, and performance benchmarks for the Raw Bits to React capstone project
+---
+
+The capstone project requires building a complete, integrated system that demonstrates mastery of all course concepts. This page details the exact requirements, performance benchmarks, and deliverables.
+
+## Seven required components
+
+Your system must include all seven components working together seamlessly:
+
+<AccordionGroup>
+  <Accordion title="1. Custom browser engine with HTML/CSS/JS support" icon="browser">
+    Build a browser engine from scratch that can render complex web pages.
+    
+    **Core features:**
+    - HTML tokenization state machine (13 states, 67 transitions)
+    - Tree construction algorithm with error recovery
+    - Quirks mode support
+    - Parser-blocking scripts and async/defer handling
+    
+    **CSS engine:**
+    - Complete tokenizer and parser
+    - Selector matching with specificity calculation
+    - Cascade resolution algorithm
+    - Style computation and inheritance
+    - Media query evaluation
+    
+    **Layout engine:**
+    - Box model calculation
+    - Normal flow, floats, and positioning schemes
+    - Flexbox algorithm (main/cross axis, flex basis, grow, shrink)
+    - Grid algorithm (track sizing, placement, spanning)
+    - Line breaking and text shaping
+    
+    **Paint and composite:**
+    - Layer tree construction
+    - Paint recording and display lists
+    - Rasterization strategies
+    - GPU compositing and texture management
+    
+    **Integration requirement:**
+    Must connect to your custom JavaScript engine for interactive functionality.
+  </Accordion>
+  
+  <Accordion title="2. React-like framework with Fiber and concurrent features" icon="react">
+    Implement a modern rendering framework with React's architecture.
+    
+    **Fiber reconciler:**
+    - Work loop and unit of work processing
+    - Reconciliation phases: render and commit
+    - Effect list construction
+    - Priority levels and lane model
+    
+    **Hooks implementation:**
+    - Hooks queue and cursor management
+    - useState with batched updates
+    - useEffect with cleanup and dependency checking
+    - useRef mutable container
+    - useCallback/useMemo memoization
+    - Custom hook composition support
+    
+    **Concurrent features:**
+    - Time slicing and work interruption
+    - Suspense and lazy loading
+    - useTransition for non-urgent updates
+    - useDeferredValue for performance optimization
+    - Automatic batching
+    
+    **Integration requirement:**
+    Must work with your custom browser engine and support server-side rendering.
+  </Accordion>
+  
+  <Accordion title="3. SSR framework with streaming and hydration" icon="server">
+    Build server-side rendering infrastructure for production use.
+    
+    **Rendering modes:**
+    - `renderToString` for basic SSR
+    - `renderToPipeableStream` for streaming
+    - Progressive hydration for faster interactivity
+    - Selective hydration for prioritized components
+    
+    **Static generation:**
+    - Build-time static site generation (SSG)
+    - Incremental static regeneration (ISR)
+    - Revalidation and stale-while-revalidate strategies
+    
+    **Rendering environments:**
+    - Edge rendering support
+    - Node.js rendering support
+    - Handle the double pass problem
+    
+    **Integration requirement:**
+    Must integrate with your React-like framework and production application.
+  </Accordion>
+  
+  <Accordion title="4. Production-optimized Next.js application" icon="rocket">
+    Create a real application demonstrating production-ready patterns.
+    
+    **Core features:**
+    - File-based routing implementation
+    - Automatic code splitting
+    - Module bundling optimization
+    - Tree shaking for minimal bundle size
+    
+    **Data fetching:**
+    - `getStaticProps` build-time execution
+    - ISR with revalidation
+    - API routes and middleware
+    
+    **Optimization:**
+    - Image optimization (formats, lazy loading, responsive images)
+    - Font optimization (subsetting, preloading, display strategies)
+    - Bundle analysis and size optimization
+    - Route-based and component-based code splitting
+    
+    **Integration requirement:**
+    Must use your SSR framework and React-like framework as the foundation.
+  </Accordion>
+  
+  <Accordion title="5. Full performance profiling suite" icon="gauge-high">
+    Build comprehensive tooling for measuring and optimizing performance.
+    
+    **Profiling capabilities:**
+    - Custom performance marks and measures
+    - Phase-by-phase timing (parse, style, layout, paint, composite)
+    - React component render profiling
+    - Heap snapshots and allocation timelines
+    
+    **Metrics tracking:**
+    - First Contentful Paint (FCP)
+    - Largest Contentful Paint (LCP)
+    - Time to Interactive (TTI)
+    - Cumulative Layout Shift (CLS)
+    - First Input Delay (FID)
+    
+    **Analysis tools:**
+    - Memory leak detection
+    - GC pause measurement
+    - Layout thrashing detection
+    - Automated performance regression testing
+    
+    **Integration requirement:**
+    Must instrument all components of your system for complete visibility.
+  </Accordion>
+  
+  <Accordion title="6. WebAssembly acceleration for critical paths" icon="bolt">
+    Optimize performance-critical operations using WebAssembly.
+    
+    **Implementation requirements:**
+    - Compile C/C++/Rust to WASM
+    - Linear memory management
+    - Optimize JS ↔ WASM interop
+    - SIMD support for data parallelism
+    - Thread support where applicable
+    
+    **Suggested use cases:**
+    - Image processing (filters, transformations)
+    - Physics simulations
+    - Complex calculations
+    - Text processing or parsing
+    - Cryptographic operations
+    
+    **Performance requirement:**
+    Must demonstrate measurable performance improvement (at least 2x faster than pure JS).
+    
+    **Integration requirement:**
+    Must integrate seamlessly with your browser engine and framework.
+  </Accordion>
+  
+  <Accordion title="7. Hardware constraint testing and optimization" icon="microchip">
+    Test and optimize your system under extreme resource constraints.
+    
+    **Constraint simulations:**
+    - Memory pressure (64KB RAM simulation)
+    - CPU throttling (10MHz simulation)
+    - Network constraints (2G, 3G conditions)
+    - GPU bottleneck analysis
+    
+    **Embedded systems:**
+    - Port mini-browser to microcontroller simulation
+    - Memory-constrained rendering
+    - CPU-constrained JavaScript execution
+    - Display optimization for small screens
+    
+    **Documentation requirement:**
+    Comprehensive performance characteristics documenting behavior under each constraint.
+    
+    **Integration requirement:**
+    Your entire system must remain functional under constrained conditions.
+  </Accordion>
+</AccordionGroup>
+
+## Performance benchmarks
+
+Your capstone project must meet these rigorous performance standards:
+
+<CardGroup cols={2}>
+  <Card title="60fps rendering" icon="display">
+    Render complex UIs at 60 frames per second consistently
+  </Card>
+  <Card title="10,000+ concurrent updates" icon="arrows-rotate">
+    Handle massive DOM updates without blocking the main thread
+  </Card>
+  <Card title="Sub-second page load" icon="stopwatch">
+    Initial page load must complete in under 1 second
+  </Card>
+  <Card title="Progressive enhancement" icon="layer-group">
+    Graceful degradation and progressive enhancement support
+  </Card>
+</CardGroup>
+
+### Detailed performance requirements
+
+<Steps>
+  <Step title="Rendering performance">
+    **Requirement:** Render complex UIs at 60fps
+    
+    - Frame time must stay under 16.67ms
+    - No dropped frames during scrolling
+    - Smooth animations with no jank
+    - Efficient repaint and reflow batching
+    
+    **Test:** Implement a stress test with animated components, dynamic lists, and heavy DOM manipulation.
+  </Step>
+  
+  <Step title="Concurrent DOM updates">
+    **Requirement:** Handle 10,000+ concurrent DOM updates
+    
+    - Use time slicing to prevent main thread blocking
+    - Maintain interactivity during large updates
+    - Proper priority handling for user interactions
+    - Efficient reconciliation and diffing
+    
+    **Test:** Render and update a virtualized list with 10,000+ items while maintaining smooth scrolling.
+  </Step>
+  
+  <Step title="Initial load performance">
+    **Requirement:** Sub-second initial page load
+    
+    - Time to First Byte (TTFB) < 200ms
+    - First Contentful Paint (FCP) < 500ms
+    - Largest Contentful Paint (LCP) < 1000ms
+    - Time to Interactive (TTI) < 1500ms
+    
+    **Test:** Measure with your profiling suite on a production build with realistic network conditions.
+  </Step>
+  
+  <Step title="Robustness">
+    **Requirement:** Progressive enhancement and graceful degradation
+    
+    - Comprehensive error handling
+    - Edge case coverage
+    - Fallback strategies for missing features
+    - Meaningful error messages
+    
+    **Test:** Deliberately break components and verify graceful failure modes.
+  </Step>
+</Steps>
+
+## Deliverables
+
+Your capstone project submission must include:
+
+### 1. Complete source code
+
+<CodeGroup>
+```bash Browser engine
+/browser-engine
+  /html-parser
+  /css-engine
+  /layout-engine
+  /paint-composite
+```
+
+```bash Framework and SSR
+/framework
+  /fiber-reconciler
+  /hooks
+  /concurrent-features
+/ssr
+  /streaming
+  /hydration
+  /static-generation
+```
+
+```bash Application and tooling
+/application
+  /routes
+  /components
+  /api
+/profiling-suite
+/wasm-modules
+/constraint-tests
+```
+</CodeGroup>
+
+### 2. Performance documentation
+
+<Info>
+  You must document every optimization with before/after metrics. This demonstrates your understanding of performance engineering principles.
+</Info>
+
+**Required documentation:**
+- Performance profile for each component
+- Optimization decisions and trade-offs
+- Benchmark results for all performance requirements
+- Memory usage analysis
+- Bundle size breakdown
+- Critical rendering path analysis
+
+### 3. Architecture documentation
+
+**System architecture:**
+- Component interaction diagrams
+- Data flow documentation
+- Rendering pipeline overview
+- Reconciliation algorithm explanation
+
+**Design decisions:**
+- Why you chose specific algorithms
+- Trade-offs you made
+- Alternative approaches considered
+- Lessons learned
+
+### 4. Testing suite
+
+**Required tests:**
+- Unit tests for core algorithms
+- Integration tests for component interaction
+- Performance regression tests
+- Stress tests for edge cases
+- Constraint testing results
+
+### 5. Demo application
+
+**Requirements:**
+- Real-world use case (not a todo app)
+- Complex UI with multiple routes
+- Data fetching and state management
+- Interactive features
+- Production-ready polish
+
+<Warning>
+  Your demo must showcase all seven components working together. A simple application won't demonstrate the full capabilities of your system.
+</Warning>
+
+## Success criteria
+
+Your capstone project is complete when:
+
+<Checklist>
+  <Check>All seven components are fully implemented and integrated</Check>
+  <Check>All performance benchmarks are met (60fps, 10k updates, sub-second load)</Check>
+  <Check>Comprehensive error handling and edge cases covered</Check>
+  <Check>Complete performance documentation with metrics</Check>
+  <Check>Architecture documentation explains all design decisions</Check>
+  <Check>Testing suite validates functionality and performance</Check>
+  <Check>Demo application showcases real-world usage</Check>
+  <Check>System works under hardware constraints</Check>
+</Checklist>
+
+## Grading rubric
+
+<CardGroup cols={3}>
+  <Card title="Implementation" icon="code">
+    40% - All components working correctly with clean, efficient code
+  </Card>
+  <Card title="Performance" icon="gauge-high">
+    30% - Meeting all benchmark requirements with documented optimizations
+  </Card>
+  <Card title="Integration" icon="puzzle-piece">
+    20% - Seamless component interaction and system architecture
+  </Card>
+  <Card title="Documentation" icon="book">
+    10% - Clear explanations of design decisions and performance analysis
+  </Card>
+</CardGroup>
+
+## Final outcome
+
+<Check>
+  Upon completion, you'll have a production-ready system demonstrating complete understanding of every layer from CPU to pixels. You'll be able to debug and optimize at any level of the frontend stack with complete confidence.
+</Check>
+
+**You will have built and understand:**
+- CPU execution and memory management
+- Network protocols and servers
+- Browser engines (parsing, layout, paint, composite)
+- JavaScript engines (parser, interpreter, GC, event loop)
+- Virtual DOM and reconciliation
+- React internals and concurrent rendering
+- SSR and hydration systems
+- Performance profiling and optimization
+
+This capstone project represents the culmination of your journey from raw bits to React - a complete understanding of modern frontend engineering from the ground up.

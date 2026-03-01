@@ -1,0 +1,216 @@
+---
+title: React clone
+description: Clone React's core reconciler with Fiber architecture and hooks implementation
+---
+
+<Info>
+  This project is part of **Week 7** and implements React's modern concurrent rendering architecture.
+</Info>
+
+## Overview
+
+Build a clone of React's core reconciler implementing the Fiber architecture with full hooks support. This project covers React's modern concurrent rendering model including time slicing, Suspense, and priority-based updates.
+
+## Project requirements
+
+<CardGroup cols={2}>
+  <Card title="Architecture" icon="diagram-project">
+    Fiber reconciler with work loop
+  </Card>
+  <Card title="Hooks" icon="link">
+    Complete hooks implementation
+  </Card>
+  <Card title="Concurrent" icon="clock">
+    Time slicing and Suspense
+  </Card>
+  <Card title="Priority" icon="ranking-star">
+    Lane-based priority model
+  </Card>
+</CardGroup>
+
+## Core components
+
+<Steps>
+  <Step title="Fiber reconciler">
+    Implement the Fiber architecture:
+    
+    - Work loop and unit of work
+    - Reconciliation phases: render and commit
+    - Effect list construction
+    - Priority levels and lane model
+    
+    The Fiber architecture enables interruptible rendering and concurrent features.
+  </Step>
+  
+  <Step title="Hooks implementation">
+    Build all core hooks:
+    
+    - Hooks queue and cursor
+    - useEffect cleanup and dependency checking
+    - useRef mutable container
+    - useCallback/useMemo memoization
+    - Custom hook composition
+    
+    Hooks must maintain state correctly across renders and handle all edge cases.
+  </Step>
+  
+  <Step title="Concurrent features">
+    Implement concurrent rendering:
+    
+    - Time slicing and work interruption
+    - Suspense and lazy loading
+    - useTransition and useDeferredValue
+    - Automatic batching
+    
+    These features enable smooth UIs even during heavy computation.
+  </Step>
+</Steps>
+
+## Fiber architecture
+
+<Note>
+  Fiber is React's reconciliation algorithm that enables incremental rendering and prioritization.
+</Note>
+
+### Work loop
+
+The work loop processes units of work (Fibers) and can be interrupted:
+
+```javascript
+function workLoop(deadline) {
+  while (nextUnitOfWork && deadline.timeRemaining() > 0) {
+    nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
+  }
+  
+  if (nextUnitOfWork) {
+    requestIdleCallback(workLoop);
+  } else {
+    commitRoot();
+  }
+}
+```
+
+### Reconciliation phases
+
+<CardGroup cols={2}>
+  <Card title="Render phase" icon="gears">
+    Build Fiber tree, can be interrupted and restarted. No side effects.
+  </Card>
+  <Card title="Commit phase" icon="check">
+    Apply changes to DOM synchronously. Cannot be interrupted.
+  </Card>
+</CardGroup>
+
+## Hooks implementation
+
+<AccordionGroup>
+  <Accordion title="useState">
+    Implement state management with queue-based updates. Handle multiple state updates in a single render and batching.
+  </Accordion>
+  
+  <Accordion title="useEffect">
+    Track effects during render, execute after commit. Implement cleanup functions and dependency array comparison for optimization.
+  </Accordion>
+  
+  <Accordion title="useRef">
+    Create mutable container that persists across renders without triggering re-renders.
+  </Accordion>
+  
+  <Accordion title="useCallback / useMemo">
+    Implement memoization with dependency tracking. Only recompute when dependencies change.
+  </Accordion>
+  
+  <Accordion title="Custom hooks">
+    Enable composition of primitive hooks into reusable custom hooks.
+  </Accordion>
+</AccordionGroup>
+
+## Hooks queue architecture
+
+<Info>
+  Hooks rely on a cursor and queue system to maintain state across renders.
+</Info>
+
+Key implementation details:
+
+- Hooks must be called in the same order every render
+- Each hook stores its state in a linked list
+- Cursor tracks current position in the hooks list
+- Hook state persists on the Fiber node
+
+## Concurrent features
+
+<Steps>
+  <Step title="Time slicing">
+    Break rendering work into chunks that can be interrupted. Yield to browser between chunks to keep UI responsive.
+  </Step>
+  
+  <Step title="Suspense">
+    Allow components to "suspend" rendering while waiting for async data. Display fallback UI during loading.
+  </Step>
+  
+  <Step title="useTransition">
+    Mark updates as transitions to deprioritize them. Keep UI responsive during heavy updates.
+  </Step>
+  
+  <Step title="useDeferredValue">
+    Keep a deferred version of a value. Allows showing stale content while new content loads.
+  </Step>
+</Steps>
+
+## Priority model
+
+<CardGroup cols={2}>
+  <Card title="Lanes" icon="road">
+    React uses "lanes" for fine-grained priority control.
+  </Card>
+  <Card title="High priority" icon="bolt">
+    User input and animations (synchronous).
+  </Card>
+  <Card title="Normal priority" icon="circle">
+    Standard updates like data fetches.
+  </Card>
+  <Card title="Low priority" icon="arrow-down">
+    Background updates and transitions.
+  </Card>
+</CardGroup>
+
+## Effect list construction
+
+<Note>
+  Build a linked list of Fibers with effects during reconciliation for efficient commit phase.
+</Note>
+
+During the render phase, tag Fibers that have side effects:
+
+- Placement (new nodes)
+- Update (changed nodes)
+- Deletion (removed nodes)
+
+In the commit phase, traverse the effect list and apply all changes synchronously.
+
+## Deliverables
+
+- Working React clone with Fiber reconciler
+- Complete hooks implementation (useState, useEffect, useRef, useCallback, useMemo)
+- Time slicing with work interruption
+- Suspense for async rendering
+- useTransition and useDeferredValue
+- Lane-based priority system
+- Effect list and commit phase
+- Automatic batching of updates
+- Test suite demonstrating all features
+- Examples showing concurrent rendering benefits
+
+## Success criteria
+
+- Fiber work loop can be interrupted and resumed
+- All hooks work correctly with proper state management
+- Hooks maintain call order invariants
+- useEffect cleanup runs at correct times
+- Dependency arrays properly detect changes
+- Suspense displays fallbacks during loading
+- Time slicing keeps UI responsive during heavy renders
+- Priority system correctly prioritizes high-priority updates
+- Commit phase applies all effects synchronously
+- Component tree renders correctly with concurrent features
