@@ -1,0 +1,185 @@
+{
+  "projectType": "general",
+  "projectName": "Raw Bits to React",
+  "projectDescription": "A comprehensive 12-week course mastering every layer of frontend engineering from CPU architecture to production React applications",
+  "theme": "aspen",
+  "primaryColor": "#2563eb",
+  "lightColor": "#3b82f6",
+  "darkColor": "#1e40af",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Course Overview",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["introduction", "prerequisites", "course-structure"]
+          },
+          {
+            "group": "Learning Path",
+            "pages": ["learning-path/overview", "learning-path/outcomes"]
+          }
+        ]
+      },
+      {
+        "tab": "Fundamentals",
+        "groups": [
+          {
+            "group": "Hardware Layer",
+            "pages": [
+              "fundamentals/cpu-architecture",
+              "fundamentals/memory-management",
+              "fundamentals/cache-basics"
+            ]
+          },
+          {
+            "group": "Networking",
+            "pages": [
+              "fundamentals/socket-programming",
+              "fundamentals/tcp-http-basics",
+              "fundamentals/tls-websockets"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Browser Engine",
+        "groups": [
+          {
+            "group": "HTML & CSS",
+            "pages": [
+              "browser/html-parsing",
+              "browser/css-engine",
+              "browser/selector-matching"
+            ]
+          },
+          {
+            "group": "Layout & Rendering",
+            "pages": [
+              "browser/layout-engine",
+              "browser/box-model-flexbox",
+              "browser/paint-composite"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "JavaScript Engine",
+        "groups": [
+          {
+            "group": "Parsing & Execution",
+            "pages": [
+              "js-engine/parsing-ast",
+              "js-engine/bytecode-vm",
+              "js-engine/closures-prototypes"
+            ]
+          },
+          {
+            "group": "Runtime",
+            "pages": [
+              "js-engine/garbage-collection",
+              "js-engine/event-loop",
+              "js-engine/jit-optimization"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "React Internals",
+        "groups": [
+          {
+            "group": "Virtual DOM",
+            "pages": [
+              "react/virtual-dom",
+              "react/reconciliation",
+              "react/batching-scheduling"
+            ]
+          },
+          {
+            "group": "Fiber & Hooks",
+            "pages": [
+              "react/fiber-architecture",
+              "react/hooks-implementation",
+              "react/concurrent-features"
+            ]
+          },
+          {
+            "group": "Server-Side Rendering",
+            "pages": [
+              "react/ssr-fundamentals",
+              "react/hydration",
+              "react/nextjs-architecture"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Performance",
+        "groups": [
+          {
+            "group": "Profiling & Optimization",
+            "pages": [
+              "performance/profiling-tools",
+              "performance/optimization-techniques",
+              "performance/critical-rendering-path"
+            ]
+          },
+          {
+            "group": "Advanced Topics",
+            "pages": [
+              "performance/engine-debugging",
+              "performance/webassembly",
+              "performance/hardware-constraints"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Projects",
+        "groups": [
+          {
+            "group": "Weekly Projects",
+            "pages": [
+              "projects/browser-engine",
+              "projects/js-engine",
+              "projects/virtual-dom-library",
+              "projects/react-clone",
+              "projects/ssr-framework"
+            ]
+          },
+          {
+            "group": "Capstone",
+            "pages": [
+              "projects/capstone-overview",
+              "projects/capstone-requirements"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "CPU and memory architecture fundamentals",
+    "Network protocols from TCP to WebSockets",
+    "Browser engine implementation (HTML, CSS, layout, paint)",
+    "JavaScript engine with GC and event loop",
+    "Virtual DOM and reconciliation algorithms",
+    "React Fiber and concurrent rendering",
+    "Server-side rendering and hydration",
+    "Performance profiling and optimization",
+    "WebAssembly integration",
+    "Hardware constraint testing"
+  ],
+  "publicApiSurface": [
+    "Week 0.5: CPU & Memory Architecture",
+    "Week 1: Networking from Scratch",
+    "Weeks 2-3: Browser Engine Implementation",
+    "Weeks 4-5: JavaScript Engine",
+    "Week 6: Virtual DOM & Reconciliation",
+    "Week 7: React/Next.js Internals",
+    "Week 8: Performance Engineering",
+    "Week 9: Engine Modification & Debugging",
+    "Week 10: Hardware Simulation & Constraints",
+    "Weeks 11-12: Capstone Project"
+  ]
+}
